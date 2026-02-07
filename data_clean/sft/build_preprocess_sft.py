@@ -239,7 +239,10 @@ def main():
     total_in_seed = total_out_seed = 0
     total_in_final = total_out_final = 0
 
-    target = args.num_samples
+    target = max(args.num_samples - existing, 0)
+    if target == 0:
+        logger.info(f"Already have {existing} samples, nothing to generate.")
+        return
     written = 0
     with open(args.output, "a" if args.resume else "w", encoding="utf-8") as f:
         while written < target:

@@ -15,7 +15,7 @@ const INPUT_PATHS = (process.env.RAG_DOCS_PATHS || process.env.RAG_DOCS_PATH || 
   .filter(Boolean);
 const BATCH_SIZE = Number(process.env.RAG_BATCH_SIZE || 20);
 const LIMIT = Number(process.env.RAG_LIMIT || 0);
-const RAG_EMBEDDING_MODEL = process.env.RAG_EMBEDDING_MODEL || "text-embedding-ada-002";
+const RAG_EMBEDDING_MODEL = process.env.RAG_EMBEDDING_MODEL || "text-embedding-3-small";
 const RAG_DOCS_CORPUS = process.env.RAG_DOCS_CORPUS || "";
 const TEXT_CHUNK_SIZE = Number(process.env.RAG_TEXT_CHUNK_SIZE || 1200);
 const RESUME = process.env.RAG_RESUME === "1";
