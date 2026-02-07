@@ -577,7 +577,6 @@ class SFTDataGenerator:
                         {"role": "system", "content": prompt_config["system"]},
                         {"role": "user", "content": prompt_config["user_template"].format(batch_size=batch_size)}
                     ],
-                    temperature=0.8,
                     max_completion_tokens=4000,
                 )
                 # 统计 token 使用
