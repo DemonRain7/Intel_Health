@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,7 +19,7 @@ INPUT_PATHS = [
 ]
 BATCH_SIZE = int(os.getenv("RAG_BATCH_SIZE", "20"))
 LIMIT = int(os.getenv("RAG_LIMIT", "0"))
-RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-ada-002")
+RAG_EMBEDDING_MODEL = os.getenv("RAG_EMBEDDING_MODEL", "text-embedding-3-small")
 RAG_DOCS_CORPUS = os.getenv("RAG_DOCS_CORPUS", "")
 TEXT_CHUNK_SIZE = int(os.getenv("RAG_TEXT_CHUNK_SIZE", "1200"))
 TOKEN_CHUNK_SIZE = int(os.getenv("RAG_TOKEN_CHUNK_SIZE", os.getenv("RAG_TEXT_CHUNK_SIZE", "700")))
@@ -123,22 +124,32 @@ def split_by_tokens(text: str) -> List[str]:
     return chunks
 
 
-def embed_text(text: str) -> List[float]:
-    tok_len = token_count(text)
-    if tok_len > EMBED_MAX_TOKENS:
-        raise RuntimeError(
-            f"Chunk still too large for embedding: {tok_len} tokens > {EMBED_MAX_TOKENS}. "
-            "Lower RAG_TOKEN_CHUNK_SIZE."
-        )
-    res = openai_client.embeddings.create(model=RAG_EMBEDDING_MODEL, input=text)
-    return res.data[0].embedding
+def batch_embed(texts: List[str], max_retries: int = 5) -> List[List[float]]:
+    """Embed a list of texts in one API call with retry on failure."""
+    for attempt in range(max_retries):
+        try:
+            res = openai_client.embeddings.create(model=RAG_EMBEDDING_MODEL, input=texts)
+            return [d.embedding for d in res.data]
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise
+            wait = min(2 ** attempt, 60)
+            print(f"  Embedding API error: {e}. Retry in {wait}s...")
+            time.sleep(wait)
+    return []
 
 
 def flush_buffer(buffer: List[Dict[str, Any]]) -> None:
     if not buffer:
         return
+    texts = [item["content"] for item in buffer]
+    vectors = batch_embed(texts)
+    if len(vectors) != len(buffer):
+        raise RuntimeError(f"Embedding count mismatch: got {len(vectors)} for {len(buffer)} texts")
+    for item, vec in zip(buffer, vectors):
+        item["embedding"] = vec
     supabase.table("rag_documents").insert(buffer).execute()
-    print(f"Inserted batch: {len(buffer)}")
+    print(f"  Inserted batch: {len(buffer)}")
 
 
 def resolve_path(input_path: str) -> Path:
@@ -182,12 +193,10 @@ def ingest_jsonl(file_path_raw: str, state: Dict[str, int]) -> int:
             for chunk in split_by_tokens(content):
                 if LIMIT and count >= LIMIT:
                     break
-                vector = embed_text(chunk)
                 buffer.append(
                     {
                         "content": chunk,
                         "metadata": build_metadata(item, file_path.name),
-                        "embedding": vector,
                     }
                 )
                 count += 1
@@ -223,12 +232,10 @@ def ingest_txt(file_path_raw: str, state: Dict[str, int]) -> int:
                 buffer = []
                 return True
 
-            vector = embed_text(part)
             buffer.append(
                 {
                     "content": part,
                     "metadata": build_metadata(None, file_path.name),
-                    "embedding": vector,
                 }
             )
             count += 1
@@ -279,20 +286,22 @@ def ingest() -> None:
     state = load_state()
     total = 0
 
-    for input_path in INPUT_PATHS:
+    for file_idx, input_path in enumerate(INPUT_PATHS, 1):
         file_path = resolve_path(input_path)
         if not file_path.exists():
             raise RuntimeError(f"Input not found: {input_path}")
         ext = file_path.suffix.lower()
-        print(f"Ingesting {input_path} (corpus={RAG_DOCS_CORPUS or 'default'})")
+        print(f"\n[{file_idx}/{len(INPUT_PATHS)}] {file_path.name} (corpus={RAG_DOCS_CORPUS or 'default'})")
         if ext == ".jsonl":
-            total += ingest_jsonl(input_path, state)
+            file_count = ingest_jsonl(input_path, state)
         elif ext == ".txt":
-            total += ingest_txt(input_path, state)
+            file_count = ingest_txt(input_path, state)
         else:
             raise RuntimeError(f"Unsupported file type: {ext}")
+        total += file_count
+        print(f"  File done: {file_count} chunks. Running total: {total}")
 
-    print(f"Done. Total inserted: {total}")
+    print(f"\nAll done. Total inserted: {total}")
 
 
 if __name__ == "__main__":
