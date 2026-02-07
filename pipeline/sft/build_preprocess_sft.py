@@ -3,8 +3,8 @@
 Preprocess/Symptom Normalizer SFT builder (multi-stage).
 
 Pipeline:
-1) gpt-5-mini (seed model) generates a natural complaint narrative.
-2) gpt-5-mini maps narrative to fixed fields (body_part/symptoms/duration/severity).
+1) gpt-4.1-mini (seed model) generates a natural complaint narrative.
+2) gpt-4.1-mini maps narrative to fixed fields (body_part/symptoms/duration/severity).
 3) gpt-4.1 generates standardized output (optimized_symptoms + rag_keywords).
 
 Output supports instruction or conversation format.
@@ -111,7 +111,11 @@ def _call_chat(client: OpenAI, model: str, messages: List[Dict[str, str]], max_t
         max_completion_tokens=max_tokens,
     )
     usage = resp.usage
-    return resp.choices[0].message.content.strip(), usage.prompt_tokens, usage.completion_tokens
+    content = resp.choices[0].message.content
+    if not content:
+        refusal = getattr(resp.choices[0].message, "refusal", None)
+        raise ValueError(f"Empty response (finish_reason={resp.choices[0].finish_reason}, refusal={refusal})")
+    return content.strip(), usage.prompt_tokens, usage.completion_tokens
 
 
 def generate_seed_case(client: OpenAI, model: str) -> Tuple[Dict[str, Any], int, int]:
@@ -209,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_samples", type=int, default=500)
     parser.add_argument("--output", type=str, required=True)
-    parser.add_argument("--seed_model", type=str, default="gpt-5-mini")
+    parser.add_argument("--seed_model", type=str, default="gpt-4.1-mini")
     parser.add_argument("--final_model", type=str, default="gpt-4.1")
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--base_url", type=str, default=None)
@@ -243,6 +247,7 @@ def main():
         logger.info(f"Already have {existing} samples, nothing to generate.")
         return
     written = 0
+    consecutive_errors = 0
     with open(args.output, "a" if args.resume else "w", encoding="utf-8") as f:
         while written < target:
             try:
@@ -250,8 +255,14 @@ def main():
                 struct, in_m, out_m = map_to_struct(client, args.seed_model, seed)
                 output, in_f, out_f = generate_output(client, args.final_model, struct)
             except Exception as exc:
-                logger.warning(f"Skip due to error: {exc}")
+                consecutive_errors += 1
+                logger.warning(f"Skip ({consecutive_errors}): {exc}")
+                if consecutive_errors >= 10:
+                    logger.error("Too many consecutive errors, stopping.")
+                    break
+                time.sleep(1)
                 continue
+            consecutive_errors = 0
 
             total_in_seed += in_s + in_m
             total_out_seed += out_s + out_m
