@@ -3,8 +3,8 @@
 Preprocess/Symptom Normalizer SFT builder (multi-stage).
 
 Pipeline:
-1) gpt-4.1-mini (seed model) generates a natural complaint narrative.
-2) gpt-4.1-mini maps narrative to fixed fields (body_part/symptoms/duration/severity).
+1) gpt-5-mini (seed model) generates a natural complaint narrative.
+2) gpt-5-mini maps narrative to fixed fields (body_part/symptoms/duration/severity).
 3) gpt-4.1 generates standardized output (optimized_symptoms + rag_keywords).
 
 Output supports instruction or conversation format.
@@ -104,7 +104,7 @@ def _build_human_prompt(input_data: Dict[str, Any]) -> str:
     )
 
 
-def _call_chat(client: OpenAI, model: str, messages: List[Dict[str, str]], max_tokens: int = 1200) -> Tuple[str, int, int]:
+def _call_chat(client: OpenAI, model: str, messages: List[Dict[str, str]], max_tokens: int = 2048) -> Tuple[str, int, int]:
     resp = client.chat.completions.create(
         model=model,
         messages=messages,
@@ -133,7 +133,7 @@ def generate_seed_case(client: OpenAI, model: str) -> Tuple[Dict[str, Any], int,
     content, in_toks, out_toks = _call_chat(
         client, model,
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        max_tokens=600,
+        max_tokens=2048,
     )
     data = _safe_json(content)
     if not _validate(SEED_SCHEMA, data):
@@ -167,7 +167,7 @@ def map_to_struct(client: OpenAI, model: str, seed: Dict[str, Any]) -> Tuple[Dic
     content, in_toks, out_toks = _call_chat(
         client, model,
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        max_tokens=800,
+        max_tokens=2048,
     )
     data = _safe_json(content)
     if not _validate(STRUCT_SCHEMA, data):
@@ -184,7 +184,7 @@ def generate_output(client: OpenAI, model: str, input_data: Dict[str, Any]) -> T
     content, in_toks, out_toks = _call_chat(
         client, model,
         [{"role": "system", "content": system}, {"role": "user", "content": user}],
-        max_tokens=800,
+        max_tokens=2048,
     )
     data = _safe_json(content)
     if not _validate(OUTPUT_SCHEMA, data):
@@ -213,7 +213,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--num_samples", type=int, default=500)
     parser.add_argument("--output", type=str, required=True)
-    parser.add_argument("--seed_model", type=str, default="gpt-4.1-mini")
+    parser.add_argument("--seed_model", type=str, default="gpt-5-mini")
     parser.add_argument("--final_model", type=str, default="gpt-4.1")
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--base_url", type=str, default=None)
