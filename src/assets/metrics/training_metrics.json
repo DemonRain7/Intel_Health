@@ -1,0 +1,5 @@
+{
+  "labels": ["base", "finetuned"],
+  "json_valid_rate": [0.72, 0.96],
+  "keyword_coverage": [0.58, 0.87]
+}

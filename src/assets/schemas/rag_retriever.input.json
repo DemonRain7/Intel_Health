@@ -1,0 +1,16 @@
+{
+  "properties": {
+    "rag_keywords": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rag Keywords",
+      "type": "array"
+    }
+  },
+  "required": [
+    "rag_keywords"
+  ],
+  "title": "RagRetrieverInput",
+  "type": "object"
+}

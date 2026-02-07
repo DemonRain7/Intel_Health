@@ -1,0 +1,70 @@
+{
+  "$defs": {
+    "RagDoc": {
+      "properties": {
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "snippet": {
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "score",
+        "snippet"
+      ],
+      "title": "RagDoc",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "optimized_symptoms": {
+      "title": "Optimized Symptoms",
+      "type": "string"
+    },
+    "rag_docs": {
+      "items": {
+        "$ref": "#/$defs/RagDoc"
+      },
+      "title": "Rag Docs",
+      "type": "array"
+    },
+    "ragScore": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ragscore"
+    },
+    "ragComment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ragcomment"
+    }
+  },
+  "required": [
+    "optimized_symptoms",
+    "rag_docs"
+  ],
+  "title": "DiagnosisInput",
+  "type": "object"
+}

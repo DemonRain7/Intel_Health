@@ -1,0 +1,41 @@
+{
+  "$defs": {
+    "RagDoc": {
+      "properties": {
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "snippet": {
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "score",
+        "snippet"
+      ],
+      "title": "RagDoc",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "rag_docs": {
+      "items": {
+        "$ref": "#/$defs/RagDoc"
+      },
+      "title": "Rag Docs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "rag_docs"
+  ],
+  "title": "RagRetrieverOutput",
+  "type": "object"
+}

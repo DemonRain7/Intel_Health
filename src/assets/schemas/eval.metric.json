@@ -1,0 +1,23 @@
+{
+  "properties": {
+    "json_valid_rate": {
+      "title": "Json Valid Rate",
+      "type": "number"
+    },
+    "keyword_coverage": {
+      "title": "Keyword Coverage",
+      "type": "number"
+    },
+    "latency_ms": {
+      "title": "Latency Ms",
+      "type": "number"
+    }
+  },
+  "required": [
+    "json_valid_rate",
+    "keyword_coverage",
+    "latency_ms"
+  ],
+  "title": "EvalMetric",
+  "type": "object"
+}

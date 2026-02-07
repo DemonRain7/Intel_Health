@@ -1,0 +1,27 @@
+{
+  "properties": {
+    "diagnosisScore": {
+      "maximum": 5,
+      "minimum": 0,
+      "title": "Diagnosisscore",
+      "type": "integer"
+    },
+    "diagnosisComment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "",
+      "title": "Diagnosiscomment"
+    }
+  },
+  "required": [
+    "diagnosisScore"
+  ],
+  "title": "DrugEvidenceOutput",
+  "type": "object"
+}

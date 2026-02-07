@@ -1,0 +1,30 @@
+{
+  "properties": {
+    "condition": {
+      "title": "Condition",
+      "type": "string"
+    },
+    "drugRagContext": {
+      "title": "Drugragcontext",
+      "type": "string"
+    },
+    "drugRagScore": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Drugragscore"
+    }
+  },
+  "required": [
+    "condition",
+    "drugRagContext"
+  ],
+  "title": "DrugRecommendInput",
+  "type": "object"
+}

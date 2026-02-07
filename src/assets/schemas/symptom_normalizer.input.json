@@ -1,0 +1,57 @@
+{
+  "properties": {
+    "user_id": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "User Id"
+    },
+    "body_part": {
+      "title": "Body Part",
+      "type": "string"
+    },
+    "symptoms": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Symptoms",
+      "type": "array"
+    },
+    "other_symptoms": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Other Symptoms"
+    },
+    "severity": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Severity",
+      "type": "integer"
+    },
+    "duration": {
+      "title": "Duration",
+      "type": "string"
+    }
+  },
+  "required": [
+    "body_part",
+    "symptoms",
+    "severity",
+    "duration"
+  ],
+  "title": "SymptomNormalizeInput",
+  "type": "object"
+}

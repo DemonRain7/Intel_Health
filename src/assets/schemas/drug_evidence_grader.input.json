@@ -1,0 +1,72 @@
+{
+  "$defs": {
+    "DiagnosisResult": {
+      "properties": {
+        "condition": {
+          "title": "Condition",
+          "type": "string"
+        },
+        "probability": {
+          "title": "Probability",
+          "type": "number"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition",
+        "probability",
+        "description"
+      ],
+      "title": "DiagnosisResult",
+      "type": "object"
+    },
+    "RagDoc": {
+      "properties": {
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "snippet": {
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "score",
+        "snippet"
+      ],
+      "title": "RagDoc",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "results": {
+      "items": {
+        "$ref": "#/$defs/DiagnosisResult"
+      },
+      "title": "Results",
+      "type": "array"
+    },
+    "rag_docs": {
+      "items": {
+        "$ref": "#/$defs/RagDoc"
+      },
+      "title": "Rag Docs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "results",
+    "rag_docs"
+  ],
+  "title": "DrugEvidenceInput",
+  "type": "object"
+}

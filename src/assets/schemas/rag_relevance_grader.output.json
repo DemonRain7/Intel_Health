@@ -1,0 +1,27 @@
+{
+  "properties": {
+    "ragScore": {
+      "maximum": 5,
+      "minimum": 0,
+      "title": "Ragscore",
+      "type": "integer"
+    },
+    "ragComment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "",
+      "title": "Ragcomment"
+    }
+  },
+  "required": [
+    "ragScore"
+  ],
+  "title": "RagRelevanceOutput",
+  "type": "object"
+}

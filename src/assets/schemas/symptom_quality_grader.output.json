@@ -1,0 +1,32 @@
+{
+  "properties": {
+    "score": {
+      "maximum": 5,
+      "minimum": 0,
+      "title": "Score",
+      "type": "integer"
+    },
+    "comment": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": "",
+      "title": "Comment"
+    },
+    "isValid": {
+      "title": "Isvalid",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "score",
+    "isValid"
+  ],
+  "title": "SymptomQualityOutput",
+  "type": "object"
+}

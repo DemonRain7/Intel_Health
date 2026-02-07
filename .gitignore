@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+dist/
+
+# Env files
+.env
+.env.*
+!.env.example
+
+# Runtime artifacts
+*.log
+*.pid
+llm_funcs/rag_ingest_state.json
+
+# Model artifacts (do not commit large weights)
+models/base/
+models/adapters/
+models/merged/
+!models/base/.gitkeep
+!models/adapters/.gitkeep
+!models/merged/.gitkeep
+!models/README.md
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.ipynb_checkpoints/
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Replit (no longer used)
+.replit
+.replit.d/
+.replit.run
+replit.nix
+pyproject.toml
+uv.lock

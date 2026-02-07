@@ -1,0 +1,104 @@
+{
+  "fast": {
+    "name": "fast",
+    "description": "Each agent uses its own 0.5B local model endpoint with local-path fallback",
+    "agents": {
+      "symptom_normalizer": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/symptom_normalizer",
+        "base_url": "http://127.0.0.1:8101/v1"
+      },
+      "symptom_quality_grader": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/symptom_quality_grader",
+        "base_url": "http://127.0.0.1:8102/v1"
+      },
+      "rag_relevance_grader": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/rag_relevance_grader",
+        "base_url": "http://127.0.0.1:8103/v1"
+      },
+      "diagnosis_generator": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/diagnosis_generator",
+        "base_url": "http://127.0.0.1:8104/v1"
+      },
+      "drug_evidence_grader": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/drug_evidence_grader",
+        "base_url": "http://127.0.0.1:8105/v1"
+      },
+      "drug_recommender": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/drug_recommender",
+        "base_url": "http://127.0.0.1:8106/v1"
+      },
+      "output_formatter": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/output_formatter",
+        "base_url": "http://127.0.0.1:8107/v1"
+      }
+    }
+  },
+  "balanced": {
+    "name": "balanced",
+    "description": "Each agent keeps independent endpoint, diagnosis/drug use 1.8B fallback model_name",
+    "agents": {
+      "symptom_normalizer": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/symptom_normalizer",
+        "base_url": "http://127.0.0.1:8101/v1"
+      },
+      "symptom_quality_grader": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/symptom_quality_grader",
+        "base_url": "http://127.0.0.1:8102/v1"
+      },
+      "rag_relevance_grader": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/rag_relevance_grader",
+        "base_url": "http://127.0.0.1:8103/v1"
+      },
+      "diagnosis_generator": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-1.8B-Instruct",
+        "model_path": "models/merged/diagnosis_generator",
+        "base_url": "http://127.0.0.1:8104/v1"
+      },
+      "drug_evidence_grader": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/drug_evidence_grader",
+        "base_url": "http://127.0.0.1:8105/v1"
+      },
+      "drug_recommender": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-1.8B-Instruct",
+        "model_path": "models/merged/drug_recommender",
+        "base_url": "http://127.0.0.1:8106/v1"
+      },
+      "output_formatter": {
+        "model_type": "local",
+        "model_name": "Qwen/Qwen3-0.5B-Instruct",
+        "model_path": "models/merged/output_formatter",
+        "base_url": "http://127.0.0.1:8107/v1"
+      }
+    }
+  },
+  "quality": {
+    "name": "quality",
+    "description": "Reserved profile (disabled)",
+    "disabled": true,
+    "agents": {}
+  }
+}

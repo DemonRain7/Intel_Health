@@ -1,0 +1,62 @@
+{
+  "$defs": {
+    "DrugItem": {
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "usage": {
+          "title": "Usage",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "usage",
+        "notes"
+      ],
+      "title": "DrugItem",
+      "type": "object"
+    },
+    "DrugRecommendBlock": {
+      "properties": {
+        "condition": {
+          "title": "Condition",
+          "type": "string"
+        },
+        "recommended_drugs": {
+          "items": {
+            "$ref": "#/$defs/DrugItem"
+          },
+          "title": "Recommended Drugs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "condition",
+        "recommended_drugs"
+      ],
+      "title": "DrugRecommendBlock",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "drugs": {
+      "items": {
+        "$ref": "#/$defs/DrugRecommendBlock"
+      },
+      "title": "Drugs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "drugs"
+  ],
+  "title": "DrugRecommendOutput",
+  "type": "object"
+}

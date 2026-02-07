@@ -1,0 +1,21 @@
+{
+  "properties": {
+    "optimized_symptoms": {
+      "title": "Optimized Symptoms",
+      "type": "string"
+    },
+    "rag_keywords": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Rag Keywords",
+      "type": "array"
+    }
+  },
+  "required": [
+    "optimized_symptoms",
+    "rag_keywords"
+  ],
+  "title": "SymptomNormalizeOutput",
+  "type": "object"
+}

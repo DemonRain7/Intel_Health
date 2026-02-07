@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --primary-color: #1976d2;
+  --primary-light: #63a4ff;
+  --primary-dark: #004ba0;
+  --secondary-color: #3f51b5;
+  --secondary-light: #757de8;
+  --secondary-dark: #002984;
+  --text-primary: #212121;
+  --text-secondary: #616161;
+  --background-color: #f5f5f5;
+  --card-color: #ffffff;
+  --error-color: #d32f2f;
+  --success-color: #388e3c;
+  --warning-color: #f57c00;
+  --info-color: #0288d1;
+}
+
+/* 基础样式 */
+body {
+  font-family: "Nunito", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  color: var(--text-primary);
+  background-color: var(--background-color);
+  line-height: 1.6;
+  font-size: 16px;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+}
+
+html {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+*, *:before, *:after {
+  box-sizing: inherit;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  margin-top: 0;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--text-primary);
+}
+
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+a:hover {
+  color: var(--primary-light);
+}
+
+/* 自定义组件样式 */
+@layer components {
+  .btn {
+    @apply px-4 py-2 rounded-md font-medium focus:outline-none transition-colors;
+  }
+  
+  .btn-primary {
+    @apply bg-blue-600 text-white hover:bg-blue-700;
+  }
+  
+  .btn-secondary {
+    @apply bg-indigo-600 text-white hover:bg-indigo-700;
+  }
+  
+  .btn-outline {
+    @apply bg-transparent border-2 border-current;
+  }
+  
+  .card {
+    @apply bg-white rounded-lg shadow-md overflow-hidden;
+  }
+  
+  .form-input {
+    @apply w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500;
+  }
+  
+  .error-text {
+    @apply text-red-600 text-sm mt-1;
+  }
+}
+
+/* 动画 */
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+
+/* 响应式布局 */
+.container {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+@media (max-width: 640px) {
+  h1 { font-size: 1.75rem; }
+  h2 { font-size: 1.5rem; }
+  h3 { font-size: 1.25rem; }
+}
+
+/* 整体布局 */
+.app-wrapper {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+}
+
+.main-content {
+  flex: 1;
+}
+
+/* 诊断工具特定样式 */
+.body-part-selector {
+  @apply grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 my-4;
+}
+
+.symptom-tag {
+  @apply inline-flex items-center px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 mr-2 mb-2;
+}
+
+.severity-slider {
+  @apply w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer;
+}
+
+.severity-slider::-webkit-slider-thumb {
+  @apply appearance-none w-6 h-6 bg-blue-600 rounded-full;
+}
+
+/* 图表样式 */
+.chart-container {
+  @apply h-64 w-full my-4;
+}
+
+.diagnosis-result {
+  @apply p-4 border rounded-lg my-4 border-l-4;
+}
+
+.result-high {
+  @apply border-l-red-500 bg-red-50;
+}
+
+.result-medium {
+  @apply border-l-yellow-500 bg-yellow-50;
+}
+
+.result-low {
+  @apply border-l-green-500 bg-green-50;
+}
+
+/* 导航栏样式 */
+.nav-link {
+  @apply px-3 py-2 rounded-md text-sm font-medium;
+}
+
+.nav-link-active {
+  @apply bg-blue-700 text-white;
+}
+
+.nav-link-inactive {
+  @apply text-white hover:bg-blue-600 hover:text-white;
+}

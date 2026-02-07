@@ -1,0 +1,46 @@
+{
+  "$defs": {
+    "RagDoc": {
+      "properties": {
+        "doc_id": {
+          "title": "Doc Id",
+          "type": "string"
+        },
+        "score": {
+          "title": "Score",
+          "type": "number"
+        },
+        "snippet": {
+          "title": "Snippet",
+          "type": "string"
+        }
+      },
+      "required": [
+        "doc_id",
+        "score",
+        "snippet"
+      ],
+      "title": "RagDoc",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "optimized_symptoms": {
+      "title": "Optimized Symptoms",
+      "type": "string"
+    },
+    "rag_docs": {
+      "items": {
+        "$ref": "#/$defs/RagDoc"
+      },
+      "title": "Rag Docs",
+      "type": "array"
+    }
+  },
+  "required": [
+    "optimized_symptoms",
+    "rag_docs"
+  ],
+  "title": "RagRelevanceInput",
+  "type": "object"
+}

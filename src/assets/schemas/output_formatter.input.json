@@ -1,0 +1,81 @@
+{
+  "$defs": {
+    "DiagnosisOutput": {
+      "properties": {
+        "results": {
+          "items": {
+            "$ref": "#/$defs/DiagnosisResult"
+          },
+          "title": "Results",
+          "type": "array"
+        },
+        "recommendations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Recommendations",
+          "type": "array"
+        },
+        "recomm_short": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Recomm Short",
+          "type": "array"
+        }
+      },
+      "required": [
+        "results",
+        "recommendations",
+        "recomm_short"
+      ],
+      "title": "DiagnosisOutput",
+      "type": "object"
+    },
+    "DiagnosisResult": {
+      "properties": {
+        "condition": {
+          "title": "Condition",
+          "type": "string"
+        },
+        "probability": {
+          "title": "Probability",
+          "type": "number"
+        },
+        "description": {
+          "title": "Description",
+          "type": "string"
+        }
+      },
+      "required": [
+        "condition",
+        "probability",
+        "description"
+      ],
+      "title": "DiagnosisResult",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "diagnosisData": {
+      "$ref": "#/$defs/DiagnosisOutput"
+    },
+    "diagnosisScore": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Diagnosisscore"
+    }
+  },
+  "required": [
+    "diagnosisData"
+  ],
+  "title": "OutputFormatterInput",
+  "type": "object"
+}
