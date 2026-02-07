@@ -109,7 +109,7 @@ def _call_chat(client: OpenAI, model: str, messages: List[Dict[str, str]], max_t
         model=model,
         messages=messages,
         temperature=0.6,
-        max_tokens=max_tokens,
+        max_completion_tokens=max_tokens,
     )
     usage = resp.usage
     return resp.choices[0].message.content.strip(), usage.prompt_tokens, usage.completion_tokens
