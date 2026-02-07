@@ -118,6 +118,17 @@ def _call_chat(client: OpenAI, model: str, messages: List[Dict[str, str]], max_t
     return content.strip(), usage.prompt_tokens, usage.completion_tokens
 
 
+def _fmt_duration(seconds: float) -> str:
+    sec = max(int(seconds), 0)
+    h, rem = divmod(sec, 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h{m:02d}m{s:02d}s"
+    if m:
+        return f"{m}m{s:02d}s"
+    return f"{s}s"
+
+
 def generate_seed_case(client: OpenAI, model: str) -> Tuple[Dict[str, Any], int, int]:
     system = (
         "你是医学病例模拟器。请生成真实口语化的患者主诉，包含主要症状、伴随症状、持续时间和严重程度。"
@@ -219,7 +230,9 @@ def main():
     parser.add_argument("--base_url", type=str, default=None)
     parser.add_argument("--output_format", type=str, default="conversation", choices=["conversation", "instruction"])
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--reset_output", action="store_true")
     parser.add_argument("--sleep", type=float, default=0.3)
+    parser.add_argument("--progress_every", type=int, default=10)
     parser.add_argument("--price_in_seed", type=float, default=0.0)
     parser.add_argument("--price_out_seed", type=float, default=0.0)
     parser.add_argument("--price_in_final", type=float, default=0.0)
@@ -233,6 +246,11 @@ def main():
     client = OpenAI(api_key=api_key, base_url=args.base_url)
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    output_abs = os.path.abspath(args.output)
+    logger.info(f"Output file: {output_abs}")
+    if args.reset_output and os.path.exists(args.output):
+        os.remove(args.output)
+        logger.info(f"Reset enabled. Removed existing output: {output_abs}")
     existing = 0
     if args.resume and os.path.exists(args.output):
         with open(args.output, "r", encoding="utf-8") as f:
@@ -248,14 +266,19 @@ def main():
         return
     written = 0
     consecutive_errors = 0
+    total_errors = 0
+    start_ts = time.time()
     with open(args.output, "a" if args.resume else "w", encoding="utf-8") as f:
         while written < target:
+            if args.progress_every > 0 and (written == 0 or (written + 1) % args.progress_every == 1):
+                logger.info(f"Generating sample {written + 1}/{target} ...")
             try:
                 seed, in_s, out_s = generate_seed_case(client, args.seed_model)
                 struct, in_m, out_m = map_to_struct(client, args.seed_model, seed)
                 output, in_f, out_f = generate_output(client, args.final_model, struct)
             except Exception as exc:
                 consecutive_errors += 1
+                total_errors += 1
                 logger.warning(f"Skip ({consecutive_errors}): {exc}")
                 if consecutive_errors >= 10:
                     logger.error("Too many consecutive errors, stopping.")
@@ -274,7 +297,18 @@ def main():
             else:
                 record = to_instruction(struct, output)
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+            f.flush()
             written += 1
+            if args.progress_every > 0 and (written == 1 or written % args.progress_every == 0 or written == target):
+                elapsed = max(time.time() - start_ts, 1e-9)
+                rate = written / elapsed
+                remain = max(target - written, 0)
+                eta = remain / rate if rate > 0 else 0.0
+                logger.info(
+                    "Progress: {}/{} ({:.1f}%) | speed={:.2f}/s | elapsed={} | eta={} | errors={}".format(
+                        written, target, (written / target) * 100.0, rate, _fmt_duration(elapsed), _fmt_duration(eta), total_errors
+                    )
+                )
             if args.sleep:
                 time.sleep(args.sleep)
 
@@ -283,6 +317,7 @@ def main():
 
     seed_cost = _cost(total_in_seed, args.price_in_seed) + _cost(total_out_seed, args.price_out_seed)
     final_cost = _cost(total_in_final, args.price_in_final) + _cost(total_out_final, args.price_out_final)
+    logger.info(f"Saved {written} samples -> {output_abs}")
     logger.info(f"Seed model tokens: in={total_in_seed:,} out={total_out_seed:,} cost=${seed_cost:.4f}")
     logger.info(f"Final model tokens: in={total_in_final:,} out={total_out_final:,} cost=${final_cost:.4f}")
 

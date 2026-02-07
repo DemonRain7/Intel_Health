@@ -621,44 +621,89 @@ class SFTDataGenerator:
         num_samples: int,
         batch_size: int = 10,
         output_file: str = None,
-        output_format: str = "instruction"
+        output_format: str = "instruction",
+        append_output: bool = False,
+        save_every_batch: bool = True,
     ) -> List[Dict]:
-        """
-        生成完整数据集
-
-        Args:
-            agent: Agent 类型
-            num_samples: 总样本数
-            batch_size: 每批大小
-            output_file: 输出文件路径
-
-        Returns:
-            所有生成的数据
-        """
-        all_data = []
+        """Generate a full dataset with per-batch progress logs."""
+        all_data: List[Dict[str, Any]] = []
+        failed_count = 0
         num_batches = (num_samples + batch_size - 1) // batch_size
+        start_ts = time.time()
+        incremental_saved = 0
+        writer = None
 
-        logger.info(f"开始生成 {agent} 数据集: {num_samples} 条，分 {num_batches} 批")
-
-        for i in tqdm(range(num_batches), desc=f"Generating {agent}"):
-            current_batch_size = min(batch_size, num_samples - len(all_data))
-
-            batch_data = self.generate_batch(agent, current_batch_size)
-            all_data.extend(batch_data)
-
-            # 避免 rate limit
-            if i < num_batches - 1:
-                time.sleep(0.5)
-
-        logger.info(f"生成完成: {len(all_data)} 条数据")
-        logger.info(f"总 Token: {self.total_tokens:,}")
-        logger.info(f"预估成本: ${self.total_cost:.4f}")
-
-        # 转换为训练格式并保存
+        logger.info(f"Start generating dataset for {agent}: {num_samples} samples in {num_batches} batches")
         if output_file:
-            training_data = self.convert_to_training_format(all_data, agent, output_format=output_format)
-            self.save_jsonl(training_data, output_file)
-            logger.info(f"已保存到: {output_file}")
+            logger.info(f"Output file: {os.path.abspath(output_file)}")
+            if save_every_batch:
+                os.makedirs(os.path.dirname(output_file), exist_ok=True)
+                mode = "a" if append_output else "w"
+                writer = open(output_file, mode, encoding="utf-8")
+
+        try:
+            for i in tqdm(range(num_batches), desc=f"Generating {agent}"):
+                current_batch_size = min(batch_size, num_samples - len(all_data))
+                if current_batch_size <= 0:
+                    break
+
+                logger.info(f"[{agent}] requesting batch {i + 1}/{num_batches} (size={current_batch_size})")
+                batch_data = self.generate_batch(agent, current_batch_size)
+                got = len(batch_data)
+                all_data.extend(batch_data)
+                if got < current_batch_size:
+                    failed_count += (current_batch_size - got)
+
+                if writer and got > 0:
+                    training_batch = self.convert_to_training_format(batch_data, agent, output_format=output_format)
+                    for item in training_batch:
+                        writer.write(json.dumps(item, ensure_ascii=False) + "\n")
+                    writer.flush()
+                    incremental_saved += len(training_batch)
+                    logger.info(
+                        f"[{agent}] checkpoint saved: +{len(training_batch)} samples (added_total={incremental_saved})"
+                    )
+
+                elapsed = max(time.time() - start_ts, 1e-9)
+                rate = len(all_data) / elapsed
+                remaining = max(num_samples - len(all_data), 0)
+                eta = remaining / rate if rate > 0 else 0.0
+
+                logger.info(
+                    "[{}] batch {}/{} | progress {}/{} ({:.1f}%) | last_batch={}/{} | failed={} | speed={:.2f}/s | eta={:.0f}s".format(
+                        agent,
+                        i + 1,
+                        num_batches,
+                        len(all_data),
+                        num_samples,
+                        (len(all_data) / max(num_samples, 1)) * 100.0,
+                        got,
+                        current_batch_size,
+                        failed_count,
+                        rate,
+                        eta,
+                    )
+                )
+
+                # Avoid rate limit spikes.
+                if i < num_batches - 1:
+                    time.sleep(0.5)
+        finally:
+            if writer:
+                writer.close()
+
+        logger.info(f"Generation complete: {len(all_data)} samples")
+        logger.info(f"Total tokens: {self.total_tokens:,}")
+        logger.info(f"Estimated cost: ${self.total_cost:.4f}")
+
+        # Convert to training format and save.
+        if output_file:
+            if save_every_batch:
+                logger.info(f"Saved to: {output_file} (incremental)")
+            else:
+                training_data = self.convert_to_training_format(all_data, agent, output_format=output_format)
+                self.save_jsonl(training_data, output_file, append=append_output)
+                logger.info(f"Saved to: {output_file}")
 
         return all_data
 
@@ -752,12 +797,14 @@ class SFTDataGenerator:
         return json.dumps(input_data, ensure_ascii=False)
 
     @staticmethod
-    def save_jsonl(data: List[Dict], filepath: str):
-        """保存为 JSONL 格式"""
+    def save_jsonl(data: List[Dict], filepath: str, append: bool = False):
+        """Save data as JSONL."""
         os.makedirs(os.path.dirname(filepath), exist_ok=True)
-        with open(filepath, 'w', encoding='utf-8') as f:
+        mode = 'a' if append else 'w'
+        with open(filepath, mode, encoding='utf-8') as f:
             for item in data:
                 f.write(json.dumps(item, ensure_ascii=False) + '\n')
+
 
 
 def _medicalize(symptom: str) -> str:
@@ -1018,6 +1065,8 @@ def main():
                         help="输出目录")
     parser.add_argument("--resume", action="store_true",
                         help="如果输出文件已存在，则继续追加生成")
+    parser.add_argument("--reset_output", action="store_true",
+                        help="Delete existing output files before generation")
     parser.add_argument("--test_cost", action="store_true",
                         help="测试模式，只打印预估成本")
     parser.add_argument("--seed_mode", action="store_true",
@@ -1063,12 +1112,17 @@ def main():
             continue
         output_file = os.path.join(args.output_dir, f"{agent}_sft_data.jsonl")
         seed_output_file = os.path.join(args.output_dir, f"{agent}_seed.jsonl")
+        logger.info(f"Output file: {os.path.abspath(output_file)}")
 
         logger.info(f"\n{'='*50}")
         logger.info(f"生成 {agent} 数据集")
         logger.info(f"{'='*50}")
 
         if args.seed_mode:
+            if args.reset_output and os.path.exists(seed_output_file):
+                os.remove(seed_output_file)
+                logger.info(f"Reset enabled. Removed existing seed file: {os.path.abspath(seed_output_file)}")
+
             seed_data = generate_seed_samples(resolved_agent, args.num_samples, seed=args.seed)
             seed_training = []
             if generator:
@@ -1076,46 +1130,39 @@ def main():
             else:
                 temp_gen = SFTDataGenerator(api_key="seed-only", base_url=args.base_url, model=args.model)
                 seed_training = temp_gen.convert_to_training_format(seed_data, resolved_agent, output_format=args.output_format)
-            if args.resume and os.path.exists(seed_output_file):
-                with open(seed_output_file, 'a', encoding='utf-8') as f:
-                    for item in seed_training:
-                        f.write(json.dumps(item, ensure_ascii=False) + '\n')
-            else:
-                SFTDataGenerator.save_jsonl(seed_training, seed_output_file)
-            logger.info(f"Seed 数据已保存到: {seed_output_file}")
+
+            append_seed = args.resume and os.path.exists(seed_output_file)
+            SFTDataGenerator.save_jsonl(seed_training, seed_output_file, append=append_seed)
+            logger.info(f"Seed data saved to: {seed_output_file}")
 
         data = []
         if args.synthetic_mode and generator:
+            if args.reset_output and os.path.exists(output_file):
+                os.remove(output_file)
+                logger.info(f"Reset enabled. Removed existing output file: {os.path.abspath(output_file)}")
+
+            existing_count = 0
             if args.resume and os.path.exists(output_file):
-                # 估算已存在样本数
                 with open(output_file, 'r', encoding='utf-8') as f:
                     existing_count = sum(1 for _ in f)
-                remaining = max(args.num_samples - existing_count, 0)
-                if remaining == 0:
-                    logger.info(f"{output_file} 已存在 {existing_count} 条，跳过生成")
-                else:
-                    logger.info(f"{output_file} 已存在 {existing_count} 条，继续生成 {remaining} 条")
-                    data = generator.generate_dataset(
-                        agent=resolved_agent,
-                        num_samples=remaining,
-                        batch_size=args.batch_size,
-                        output_file=None,
-                        output_format=args.output_format
-                    )
-                    if data:
-                        training_data = generator.convert_to_training_format(
-                            data, resolved_agent, output_format=args.output_format
-                        )
-                        with open(output_file, 'a', encoding='utf-8') as f:
-                            for item in training_data:
-                                f.write(json.dumps(item, ensure_ascii=False) + '\n')
+
+            remaining = max(args.num_samples - existing_count, 0)
+            if remaining == 0:
+                logger.info(f"{output_file} already has {existing_count} samples; skip generation")
             else:
+                if existing_count > 0:
+                    logger.info(f"{output_file} already has {existing_count} samples; continue with {remaining}")
+                else:
+                    logger.info(f"Start from scratch: generating {remaining} samples")
+
                 data = generator.generate_dataset(
                     agent=resolved_agent,
-                    num_samples=args.num_samples,
+                    num_samples=remaining,
                     batch_size=args.batch_size,
                     output_file=output_file,
-                    output_format=args.output_format
+                    output_format=args.output_format,
+                    append_output=(existing_count > 0),
+                    save_every_batch=True,
                 )
 
         if args.test_cost and generator:

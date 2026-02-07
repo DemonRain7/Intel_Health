@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import time
 from typing import Dict, Any, List, Optional
 
 
@@ -65,15 +66,27 @@ def main():
     parser.add_argument("--instruction", type=str, default=DEFAULT_INSTRUCTION)
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--reset_output", action="store_true")
+    parser.add_argument("--progress_every", type=int, default=100)
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.output), exist_ok=True)
+    output_abs = os.path.abspath(args.output)
+    print(f"Output file: {output_abs}", flush=True)
+    if args.reset_output and os.path.exists(args.output):
+        os.remove(args.output)
+        print(f"Reset enabled. Removed existing output: {output_abs}", flush=True)
 
     start = 0
     if args.resume and os.path.exists(args.output):
         with open(args.output, "r", encoding="utf-8") as f:
             start = sum(1 for _ in f)
+        print(f"Resume enabled. Existing: {start}", flush=True)
 
+    start_ts = time.time()
+    processed = 0
+    skipped_invalid = 0
+    skipped_resume = 0
     written = 0
     with open(args.input, "r", encoding="utf-8") as fin, open(args.output, "a" if args.resume else "w", encoding="utf-8") as fout:
         for line in fin:
@@ -81,17 +94,34 @@ def main():
                 break
             if not line.strip():
                 continue
+            processed += 1
             item = json.loads(line)
             record = build_record(item, args.instruction)
             if record is None:
+                skipped_invalid += 1
                 continue
             if start > 0:
                 start -= 1
+                skipped_resume += 1
                 continue
             fout.write(json.dumps(record, ensure_ascii=False) + "\n")
+            fout.flush()
             written += 1
+            if args.progress_every > 0 and (written == 1 or written % args.progress_every == 0):
+                elapsed = max(time.time() - start_ts, 1e-9)
+                rate = written / elapsed
+                print(
+                    f"Progress: written={written} processed={processed} skipped_invalid={skipped_invalid} "
+                    f"skipped_resume={skipped_resume} speed={rate:.2f}/s",
+                    flush=True,
+                )
 
-    print(f"Saved {written} samples -> {args.output}")
+    elapsed = max(time.time() - start_ts, 1e-9)
+    print(
+        f"Saved {written} samples -> {output_abs} | processed={processed} "
+        f"skipped_invalid={skipped_invalid} skipped_resume={skipped_resume} elapsed={elapsed:.1f}s",
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
