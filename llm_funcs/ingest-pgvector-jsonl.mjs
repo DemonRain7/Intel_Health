@@ -8,7 +8,7 @@ import { OpenAIEmbeddings } from "@langchain/openai";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const DEFAULT_PATH = path.resolve(__dirname, "../../datasets/rag/diagnosis/诊断学.txt");
+const DEFAULT_PATH = path.resolve(__dirname, "../datasets/rag/diagnosis/诊断学.txt");
 const INPUT_PATHS = (process.env.RAG_DOCS_PATHS || process.env.RAG_DOCS_PATH || DEFAULT_PATH)
   .split(",")
   .map(p => p.trim())

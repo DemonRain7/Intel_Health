@@ -27,6 +27,9 @@ except Exception:
     class ValidationError(Exception):
         pass
 
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
 from generate_sft_data import (
     BODY_PARTS,
     SYMPTOMS_BY_BODY_PART,
