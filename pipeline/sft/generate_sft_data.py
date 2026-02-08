@@ -337,11 +337,12 @@ PROMPTS = {
 }}
 
 要求：
-1. 生成不同质量等级的样本（差:0-1分, 中:2-3分, 好:4-5分）
-2. comment 一句话说明扣分原因或优点，不超过30字
-3. optimized_symptoms 保持简洁，不超过50字
-4. score < 3 时 isValid 为 false
-5. 只输出 JSON，不要任何解释文字
+1. 必须均匀覆盖三个质量等级：约30%差(0-1分)、40%中(2-3分)、30%好(4-5分)
+2. 差样本特征：口语化未转换、关键词缺失或过于泛化、信息不完整
+3. comment 一句话说明扣分原因或优点，不超过30字
+4. optimized_symptoms 保持简洁，不超过50字
+5. score < 3 时 isValid 为 false
+6. 只输出 JSON，不要任何解释文字
 
 请返回一个包含 {batch_size} 条数据的 JSON 数组："""
     },
@@ -362,30 +363,31 @@ PROMPTS = {
 4: 高度相关（覆盖核心症状并提供有价值背景）
 5: 极高相关（高度匹配且包含关键诊断提示/鉴别要点）
 
-请生成不同相关度的样本，并包含负样本。""",
+请生成不同相关度的样本，并包含负样本。
+只输出严格合法 JSON，不要 Markdown。""",
 
         "user_template": """请生成 {batch_size} 条"RAG评审"训练数据。
 
 每条数据格式如下：
 {{
   "input": {{
-    "optimized_symptoms": "患者症状描述",
+    "optimized_symptoms": "患者症状描述（1-2句话）",
     "rag_docs": [
-      {{"doc_id": "doc_001", "score": 0.78, "snippet": "检索摘要片段1"}},
-      {{"doc_id": "doc_002", "score": 0.42, "snippet": "检索摘要片段2"}}
+      {{"doc_id": "doc_001", "score": 0.78, "snippet": "检索摘要片段（1句话）"}}
     ]
   }},
   "output": {{
     "ragScore": 0-5,
-    "ragComment": "评价意见"
+    "ragComment": "评价意见（一句话）"
   }}
 }}
 
 要求：
-1. 生成不同相关度的样本（低:0-2, 中:3, 高:4-5）
-2. rag_docs 要模拟真实的医学知识库检索结果
-3. 包含负样本与边缘样本（相近但不匹配）
-4. 直接返回 JSON 数组
+1. 必须均匀覆盖三个相关度等级：约30%低(0-2分)、40%中(3分)、30%高(4-5分)
+2. 低分样本特征：rag_docs 内容与症状完全无关或仅有泛化信息
+3. rag_docs 只放1条，snippet 不超过40字
+4. ragComment 不超过20字
+5. 只输出 JSON，不要任何解释文字
 
 请返回一个包含 {batch_size} 条数据的 JSON 数组："""
     },
@@ -406,7 +408,8 @@ PROMPTS = {
 4: 高度相关（药物/禁忌与诊断匹配，证据充分）
 5: 极高相关（证据充分且包含关键安全/禁忌提示）
 
-请生成不同相关度的样本，并包含负样本。""",
+请生成不同相关度的样本，并包含负样本。
+只输出严格合法 JSON，不要 Markdown。""",
 
         "user_template": """请生成 {batch_size} 条"用药证据评审"训练数据。
 
@@ -414,25 +417,24 @@ PROMPTS = {
 {{
   "input": {{
     "results": [
-      {{"condition": "疾病1", "probability": 0.xx, "description": "疾病描述"}},
-      {{"condition": "疾病2", "probability": 0.yy, "description": "疾病描述"}}
+      {{"condition": "疾病名", "probability": 0.xx, "description": "简短描述"}}
     ],
     "rag_docs": [
-      {{"doc_id": "drug_doc_001", "score": 0.72, "snippet": "药理/禁忌相关摘要1"}},
-      {{"doc_id": "drug_doc_002", "score": 0.40, "snippet": "药理/禁忌相关摘要2"}}
+      {{"doc_id": "drug_doc_001", "score": 0.72, "snippet": "药理/禁忌摘要（1句话）"}}
     ]
   }},
   "output": {{
     "diagnosisScore": 0-5,
-    "diagnosisComment": "评价意见"
+    "diagnosisComment": "评价意见（一句话）"
   }}
 }}
 
 要求：
-1. 生成不同相关度的样本（低:0-2, 中:3, 高:4-5）
-2. rag_docs 要模拟真实药物知识库检索结果
-3. 包含负样本与边缘样本（相近但不匹配）
-4. 直接返回 JSON 数组
+1. 必须均匀覆盖三个相关度等级：约30%低(0-2分)、40%中(3分)、30%高(4-5分)
+2. 低分样本特征：rag_docs 与诊断无关或相矛盾
+3. results 只放1条，rag_docs 只放1条，snippet 不超过40字
+4. diagnosisComment 不超过20字
+5. 只输出 JSON，不要任何解释文字
 
 请返回一个包含 {batch_size} 条数据的 JSON 数组："""
     },
