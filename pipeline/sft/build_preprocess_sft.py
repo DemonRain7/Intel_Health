@@ -34,7 +34,6 @@ from generate_sft_data import (
     BODY_PARTS,
     SYMPTOMS_BY_BODY_PART,
     DURATION_OPTIONS,
-    DURATION_CHINESE,
 )
 
 

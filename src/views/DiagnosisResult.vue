@@ -300,9 +300,9 @@ export default {
       .style('fill', d.color)
       .style('font-size', `${d.size}px`)
       .style('filter', 'none');
-  });;
+  });
     })
-    
+
     .start();
 };
 

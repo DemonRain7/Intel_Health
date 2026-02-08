@@ -1166,7 +1166,7 @@ def main():
                 )
 
         if args.test_cost and generator:
-            logger.info(f"\n📊 成本估算:")
+            logger.info("\n📊 成本估算:")
             logger.info(f"   - 总 Token: {generator.total_tokens:,}")
             logger.info(f"   - 预估成本: ${generator.total_cost:.4f}")
             logger.info(f"   - 每条成本: ${generator.total_cost/max(len(data),1):.6f}")

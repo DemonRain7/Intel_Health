@@ -9,7 +9,7 @@ import argparse
 import json
 import os
 import time
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 
 
 DEFAULT_INSTRUCTION = (

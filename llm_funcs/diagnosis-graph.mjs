@@ -586,7 +586,7 @@ async function symptom_quality_grader(state) {
   // 第一步：先对已有结果进行初步评分
   const firstCritic = await currentLLM.invoke(criticPrompt);
 
-  let criticScore = normalizeCriticOutput(safeJSONParse(firstCritic.content, { score: 3, isValid: true, comment: "默认通过（小模型容错）" }, \"symptom_quality_grader.output\"));
+  let criticScore = normalizeCriticOutput(safeJSONParse(firstCritic.content, { score: 3, isValid: true, comment: "默认通过（小模型容错）" }, "symptom_quality_grader.output"));
   if (!criticScore) {
     console.warn("评分解析异常，使用默认通过:", firstCritic.content);
     criticScore = { score: 3, isValid: true, comment: "默认通过（小模型容错）" };
@@ -671,7 +671,7 @@ ${JSON.stringify(diagnosisData, null, 2)}
     );
 
     // console.log("secondCritic:", secondCritic)
-    let newScoreData = normalizeCriticOutput(safeJSONParse(secondCritic.content, { score: 3, isValid: true, comment: "默认通过" }, \"symptom_quality_grader.output\"));
+    let newScoreData = normalizeCriticOutput(safeJSONParse(secondCritic.content, { score: 3, isValid: true, comment: "默认通过" }, "symptom_quality_grader.output"));
     if (!newScoreData) {
       console.warn("二次评分解析失败，使用默认通过");
       newScoreData = { score: 3, isValid: true, comment: "默认通过" };
