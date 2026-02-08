@@ -613,7 +613,7 @@ class SFTDataGenerator:
                         {"role": "system", "content": prompt_config["system"]},
                         {"role": "user", "content": user_msg},
                     ],
-                    max_completion_tokens=4000,
+                    max_completion_tokens=8000,
                 )
                 # json_object mode forces the model to output valid JSON
                 if not getattr(self, "_json_format_disabled", False):
