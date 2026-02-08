@@ -28,6 +28,7 @@ import os
 import json
 import argparse
 import random
+import re
 import time
 from typing import List, Dict, Any
 from openai import OpenAI
@@ -317,28 +318,30 @@ PROMPTS = {
 4. 术语使用专业准确
 5. 信息完整，无遗漏重要内容
 
-请生成各种质量等级（好/中/差）的样本。""",
+请生成各种质量等级（好/中/差）的样本。
+只输出严格合法 JSON，不要 Markdown。""",
 
         "user_template": """请生成 {batch_size} 条"质量评分"训练数据。
 
 每条数据格式如下：
 {{
   "input": {{
-    "optimized_symptoms": "症状描述",
+    "optimized_symptoms": "症状描述（1-2句话即可）",
     "rag_keywords": ["关键词1", "关键词2"]
   }},
   "output": {{
     "score": 0-5,
-    "comment": "评价意见",
+    "comment": "评价意见（一句话）",
     "isValid": true/false
   }}
 }}
 
 要求：
 1. 生成不同质量等级的样本（差:0-1分, 中:2-3分, 好:4-5分）
-2. comment 要具体说明扣分原因或优点
-3. score < 3 时 isValid 为 false
-4. 直接返回 JSON 数组
+2. comment 一句话说明扣分原因或优点，不超过30字
+3. optimized_symptoms 保持简洁，不超过50字
+4. score < 3 时 isValid 为 false
+5. 只输出 JSON，不要任何解释文字
 
 请返回一个包含 {batch_size} 条数据的 JSON 数组："""
     },
@@ -525,6 +528,33 @@ PROMPTS = {
 }
 
 
+def _repair_truncated_json(text: str) -> Any:
+    """Try to repair truncated JSON by closing open brackets/braces."""
+    text = text.strip()
+    # Strip trailing incomplete string (e.g. `"some truncated te`)
+    text = re.sub(r',\s*"[^"]*$', '', text)
+    # Remove trailing comma
+    text = re.sub(r',\s*$', '', text)
+    # Close open structures
+    opens = text.count('[') - text.count(']')
+    braces = text.count('{') - text.count('}')
+    text += '}' * max(braces, 0)
+    text += ']' * max(opens, 0)
+    return json.loads(text)
+
+
+def _unwrap_json_data(data: Any) -> List[Dict]:
+    """Extract list from response — handles both bare arrays and {"data": [...]} wrappers."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("data", "items", "results", "samples"):
+            if key in data and isinstance(data[key], list):
+                return data[key]
+        return [data]
+    return [data]
+
+
 # ==================== 数据生成类 ====================
 
 class SFTDataGenerator:
@@ -553,7 +583,7 @@ class SFTDataGenerator:
         self.input_price = float(input_price_per_million) / 1_000_000
         self.output_price = float(output_price_per_million) / 1_000_000
 
-    def generate_batch(self, agent: str, batch_size: int = 10, max_retries: int = 2) -> List[Dict]:
+    def generate_batch(self, agent: str, batch_size: int = 10, max_retries: int = 3) -> List[Dict]:
         """
         生成一批数据
 
@@ -568,17 +598,37 @@ class SFTDataGenerator:
             raise ValueError(f"Unknown agent: {agent}")
 
         prompt_config = PROMPTS[agent]
+        # Append wrapper instruction so response_format=json_object works
+        user_msg = prompt_config["user_template"].format(batch_size=batch_size)
+        user_msg += '\n\n重要：请将结果放入 JSON 对象返回，格式为 {"data": [你的数组]}。每条数据保持简洁，不要写过长的描述。'
 
+        content = ""
         for attempt in range(max_retries + 1):
             try:
-                response = self.client.chat.completions.create(
+                api_kwargs: Dict[str, Any] = dict(
                     model=self.model,
                     messages=[
                         {"role": "system", "content": prompt_config["system"]},
-                        {"role": "user", "content": prompt_config["user_template"].format(batch_size=batch_size)}
+                        {"role": "user", "content": user_msg},
                     ],
                     max_completion_tokens=4000,
                 )
+                # json_object mode forces the model to output valid JSON
+                if not getattr(self, "_json_format_disabled", False):
+                    api_kwargs["response_format"] = {"type": "json_object"}
+
+                try:
+                    response = self.client.chat.completions.create(**api_kwargs)
+                except Exception as rf_err:
+                    # If model doesn't support response_format, disable and retry
+                    if "response_format" in str(rf_err).lower() or "unsupported" in str(rf_err).lower():
+                        logger.warning(f"response_format not supported by {self.model}, disabling")
+                        self._json_format_disabled = True
+                        api_kwargs.pop("response_format", None)
+                        response = self.client.chat.completions.create(**api_kwargs)
+                    else:
+                        raise
+
                 # 统计 token 使用
                 usage = response.usage
                 input_tokens = usage.prompt_tokens
@@ -589,17 +639,28 @@ class SFTDataGenerator:
                 cost = input_tokens * self.input_price + output_tokens * self.output_price
                 self.total_cost += cost
 
-                # 解析返回的 JSON
-                content = response.choices[0].message.content.strip()
+                # Check for empty / truncated response
+                choice = response.choices[0]
+                raw_content = choice.message.content or ""
+                content = raw_content.strip()
+                if not content:
+                    logger.warning(f"Empty response (finish_reason={choice.finish_reason}, attempt {attempt + 1})")
+                    raise ValueError("empty response")
 
-                # 尝试提取 JSON 数组
+                # Strip markdown fences if present
                 if content.startswith("```"):
                     content = content.split("```")[1]
                     if content.startswith("json"):
                         content = content[4:]
 
-                data = json.loads(content)
-                data_list = data if isinstance(data, list) else [data]
+                # Parse JSON — try direct first, then repair truncated
+                try:
+                    data = json.loads(content)
+                except json.JSONDecodeError:
+                    data = _repair_truncated_json(content)
+                    logger.info(f"Repaired truncated JSON (attempt {attempt + 1})")
+
+                data_list = _unwrap_json_data(data)
                 filtered = [d for d in data_list if validate_item(agent, d)]
                 if filtered:
                     return filtered
@@ -611,7 +672,7 @@ class SFTDataGenerator:
                 logger.error(f"API 调用失败 (attempt {attempt + 1}): {e}")
 
             if attempt < max_retries:
-                time.sleep(0.5)
+                time.sleep(1)
                 continue
             return []
 
