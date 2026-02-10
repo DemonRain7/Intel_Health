@@ -4,6 +4,7 @@
 Fine-tuning the library models for causal language modeling (GPT, LLaMA, Bloom, ...) on a json file or a dataset.
 """
 
+import json
 import math
 import os
 import sys
@@ -887,6 +888,20 @@ def main():
                 save_model_zero3(model, tokenizer, training_args, trainer)
             else:
                 save_model(model, tokenizer, training_args)
+
+            # Save GPU stats for post-training analysis
+            if torch.cuda.is_available():
+                gpu_props = torch.cuda.get_device_properties(0)
+                gpu_stats = {
+                    "gpu_name": gpu_props.name,
+                    "peak_allocated_gb": round(torch.cuda.max_memory_allocated(0) / 1024**3, 2),
+                    "peak_reserved_gb": round(torch.cuda.max_memory_reserved(0) / 1024**3, 2),
+                    "total_gb": round(gpu_props.total_memory / 1024**3, 1),
+                }
+                gpu_path = os.path.join(training_args.output_dir, "gpu_stats.json")
+                with open(gpu_path, "w") as f:
+                    json.dump(gpu_stats, f, indent=2)
+                logger.info(f"GPU stats saved to {gpu_path}: {gpu_stats}")
 
     # Evaluation
     if training_args.do_eval:
