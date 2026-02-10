@@ -59,16 +59,16 @@ export const DISCLAIMER_TEXT = `
 ä½¿ç”¨æœ¬ç³»ç»Ÿå³è¡¨ç¤ºæ‚¨ç†è§£å¹¶æ¥å—è¿™äº›æ¡æ¬¾ã€‚
 `;
 
-// Ä£ĞÍµµÎ»
+// Ä£ï¿½Íµï¿½Î»
 export const MODEL_PROFILES = [
   {
     id: 'fast',
     name: 'fast',
-    description: 'È«²¿ Agent Ê¹ÓÃ Qwen3-0.5B',
+    description: 'È«ï¿½ï¿½ Agent Ê¹ï¿½ï¿½ Qwen3-0.6B',
   },
   {
     id: 'balanced',
     name: 'balanced',
-    description: 'Õï¶Ï/ÓÃÒ©Ê¹ÓÃ Qwen3-1.8B£¬ÆäÓà 0.5B',
+    description: 'ï¿½ï¿½ï¿½/ï¿½ï¿½Ò©Ê¹ï¿½ï¿½ Qwen3-1.7Bï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ 0.6B',
   }
 ];
