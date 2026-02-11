@@ -3,12 +3,12 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 export function buildDiagnosisPrompt(optimizedSymptoms, ragDocs) {
   return [
     new SystemMessage(
-      "ÄãÊÇÒ½Ñ§Õï¶ÏÖúÊÖ£¬Çë»ùÓÚÖ¢×´ÓëRAG±³¾°¸ø³ö3¸ö¿ÉÄÜÕï¶Ï£¬²¢Êä³öJSON¡£"
+      "ä½ æ˜¯åŒ»å­¦æ¨ç†åŠ©æ‰‹ï¼Œè¯·æ ¹æ®ç—‡çŠ¶å’ŒRAGæ–‡æ¡£æ¨ç†å‡º3ç»„ç–¾ç—…å¯èƒ½æ€§ï¼Œå¹¶è¾“å‡ºJSONã€‚"
     ),
     new HumanMessage(
-      `Ö¢×´£º${optimizedSymptoms}\n` +
-      `RAGÎÄµµ£º${JSON.stringify(ragDocs, null, 2)}\n\n` +
-      `Êä³ö¸ñÊ½£º\n{\n  "results": [\n    {"condition": "...", "probability": 0.xx, "description": "..."}\n  ],\n  "recommendations": ["...","...","..."],\n  "recomm_short": ["..."x10]\n}`
+      `ç—‡çŠ¶ï¼š${optimizedSymptoms}\n` +
+      `RAGæ–‡æ¡£ï¼š${JSON.stringify(ragDocs, null, 2)}\n\n` +
+      `è¾“å‡ºæ ¼å¼ï¼š\n{\n  "results": [\n    {"condition": "...", "probability": 0.xx, "description": "..."}\n  ],\n  "recommendations": ["...","...","..."],\n  "recomm_short": ["..."x10]\n}`
     ),
   ];
 }

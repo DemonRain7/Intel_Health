@@ -3,12 +3,12 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 export function buildDrugRecommendPrompt(condition, drugRagContext) {
   return [
     new SystemMessage(
-      "ÄãÊÇÓÃÒ©½¨ÒéÖúÊÖ£¬Çë»ùÓÚ¼²²¡ÓëÒ©ÎïÖªÊ¶Êä³öÓÃÒ©½¨ÒéJSON¡£"
+      "ä½ æ˜¯ä¸´åºŠè¯ç‰©æ¨èåŠ©æ‰‹ï¼Œè¯·æ ¹æ®ç–¾ç—…å’Œè¯ç‰©çŸ¥è¯†æ¨èç”¨è¯ï¼Œè¾“å‡ºJSONã€‚"
     ),
     new HumanMessage(
-      `¼²²¡£º${condition}\n` +
-      `Ò©ÎïÖªÊ¶£º${drugRagContext}\n\n` +
-      `Êä³ö¸ñÊ½£º\n{\n  "drugs": [{\n    "condition": "...",\n    "recommended_drugs": [\n      {"name": "...", "usage": "...", "notes": "..."}\n    ]\n  }]\n}`
+      `ç–¾ç—…ï¼š${condition}\n` +
+      `è¯ç‰©çŸ¥è¯†ï¼š${drugRagContext}\n\n` +
+      `è¾“å‡ºæ ¼å¼ï¼š\n{\n  "drugs": [{\n    "condition": "...",\n    "recommended_drugs": [\n      {"name": "...", "usage": "...", "notes": "..."}\n    ]\n  }]\n}`
     ),
   ];
 }

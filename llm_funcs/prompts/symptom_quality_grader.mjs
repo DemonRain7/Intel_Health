@@ -3,12 +3,13 @@ import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 export function buildSymptomQualityPrompt(optimizedSymptoms, ragKeywords) {
   return [
     new SystemMessage(
-      "ÄãÊÇÒ½Ñ§½á¹¹»¯ÖÊ¼ìÖúÊÖ£¬ÇëÎª½á¹¹»¯Ö¢×´Êä³öÆÀ·Ö(0-5)£¬²¢¸ø³ö¼ò¶Ì½¨Òé¡£Ö»Êä³öJSON¡£"
+      "ä½ æ˜¯åŒ»å­¦ç»“æ„åŒ–è´¨é‡è¯„åˆ†å‘˜ï¼Œè¯·ä¸ºç»“æ„åŒ–ç—‡çŠ¶æè¿°è¯„åˆ†(0-5)ï¼Œå¹¶ç»™å‡ºæ”¹è¿›å»ºè®®ã€‚åªè¾“å‡ºJSONã€‚"
     ),
     new HumanMessage(
-      `ÊäÈë£º\noptimized_symptoms: ${optimizedSymptoms}\n` +
+      `è¯·å¯¹ä»¥ä¸‹ç—‡çŠ¶ç»“æ„åŒ–ç»“æœè¿›è¡Œè¯„åˆ†ï¼š\n` +
+      `optimized_symptoms: ${optimizedSymptoms}\n` +
       `rag_keywords: ${JSON.stringify(ragKeywords)}\n\n` +
-      `Êä³ö¸ñÊ½£º\n{\n  "score": 0-5,\n  "comment": "...",\n  "isValid": true/false\n}`
+      `è¯·è¾“å‡º JSON æ ¼å¼ï¼š{"score": 0-5, "comment": "...", "isValid": true/false}`
     ),
   ];
 }
