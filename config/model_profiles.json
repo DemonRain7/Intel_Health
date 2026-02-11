@@ -95,6 +95,54 @@
       }
     }
   },
+  "local_test": {
+    "name": "local_test",
+    "description": "All agents share a single local inference server on port 8000 (CPU, for testing)",
+    "agents": {
+      "symptom_normalizer": {
+        "model_type": "local",
+        "model_name": "symptom_normalizer",
+        "model_path": "models/merged/symptom_normalizer",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "symptom_quality_grader": {
+        "model_type": "local",
+        "model_name": "symptom_quality_grader",
+        "model_path": "models/merged/symptom_quality_grader",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "rag_relevance_grader": {
+        "model_type": "local",
+        "model_name": "rag_relevance_grader",
+        "model_path": "models/merged/rag_relevance_grader",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "diagnosis_generator": {
+        "model_type": "local",
+        "model_name": "diagnosis_generator",
+        "model_path": "models/merged/diagnosis_generator",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "drug_evidence_grader": {
+        "model_type": "local",
+        "model_name": "drug_evidence_grader",
+        "model_path": "models/merged/drug_evidence_grader",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "drug_recommender": {
+        "model_type": "local",
+        "model_name": "drug_recommender",
+        "model_path": "models/merged/drug_recommender",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "output_formatter": {
+        "model_type": "local",
+        "model_name": "output_formatter",
+        "model_path": "models/merged/output_formatter",
+        "base_url": "http://127.0.0.1:8000/v1"
+      }
+    }
+  },
   "quality": {
     "name": "quality",
     "description": "Reserved profile (disabled)",
