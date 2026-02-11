@@ -8,7 +8,6 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
-import { HumanMessage } from "@langchain/core/messages";
 import { app as diagnosisApp } from "./llm_funcs/diagnosis-graph.mjs";
 
 dotenv.config();
@@ -295,10 +294,9 @@ app.post('/api/diagnoses', authenticateToken, async (req, res) => {
 
     if (!diagnosisResult) {
       const result = await diagnosisApp.invoke({
-        messages: [new HumanMessage({ content: { ...diagnosisData, user_id: req.user.id } })]
+        diagnosisData: { ...diagnosisData, user_id: req.user.id },
       });
-      const llmResponse = result.messages[result.messages.length - 1];
-      diagnosisResult = llmResponse.content.diagnosisData;
+      diagnosisResult = result.finalOutput;
 
       await req.supabase.from('diagnosis_cache').insert({
         user_id: req.user.id,
