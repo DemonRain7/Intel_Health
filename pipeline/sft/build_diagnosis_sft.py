@@ -395,9 +395,14 @@ def build_seed_samples(
 # ==================== Synthetic mode (GPT) ====================
 
 _SYNTH_SYSTEM = """\
-你是一个医学数据生成助手。根据提供的医学选择题知识，生成用于训练"诊断生成"模型的 SFT 数据。
+你是一个医学数据生成助手。对于给定的每道医学选择题，先判断它是否为临床诊断场景：
 
-每条数据格式：
+✓ 符合（生成数据）：题目描述了真实患者的症状/体征/检查结果，问的是"最可能的诊断"、\
+"最可能患有什么病"等诊断类问题。
+✗ 不符合（输出 null）：问的是治疗方案、用药选择、手术方式、辅助检查项目、病理机制、\
+预防措施等非诊断类问题。
+
+对于符合的题目，生成一条 SFT 数据：
 {
   "input": {
     "optimized_symptoms": "患者症状描述，50-100字，包含年龄性别、主诉、体征",
@@ -415,18 +420,20 @@ _SYNTH_SYSTEM = """\
   }
 }
 
-要求：
+生成要求：
 1. 症状描述真实具体，包含年龄性别
 2. 概率之和约为1，符合医学常识
 3. recommendations 正好 3 条（每条>=15字），recomm_short 正好 10 条（每条<=10字）
 4. 只输出严格合法 JSON（双引号，无注释，无 Markdown）"""
 
 _SYNTH_USER = """\
-以下是 {n} 道医学选择题。请根据其中的医学知识，生成 {n} 条诊断训练数据。
+以下是 {n} 道医学选择题。对每道题先判断是否为临床诊断场景，\
+符合则生成一条 SFT 数据，不符合则输出 null。{variation_hint}
 
 {mcq_text}
 
-请将结果放入 JSON 对象返回：{{"data": [你的数组]}}"""
+返回格式（data 数组长度必须等于题目数 {n}，不符合题目位置填 null）：\
+{{"data": [数据或null, ...]}}"""
 
 
 def build_synthetic_samples(
@@ -439,7 +446,11 @@ def build_synthetic_samples(
     price_in: float = 0.0,
     price_out: float = 0.0,
 ) -> List[Dict[str, Any]]:
-    """Build SFT samples using GPT with MCQ knowledge as context."""
+    """Build SFT samples using GPT with MCQ knowledge as context.
+
+    Only processes clinical diagnosis MCQs (pre-filtered). Loops cyclically
+    through valid items until num_samples is reached.
+    """
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key, base_url=base_url)
@@ -454,17 +465,22 @@ def build_synthetic_samples(
     rng.shuffle(shuffled)
 
     samples: List[Dict[str, Any]] = []
-    num_batches = (num_samples + batch_size - 1) // batch_size
+    idx = 0        # current position in shuffled
+    loop = 0       # how many times we've looped through all items
+    bi = 0         # batch counter (for logging)
+    skipped_by_gpt = 0
     start_ts = time.time()
 
-    for bi in range(num_batches):
-        if len(samples) >= num_samples:
-            break
-
-        start = (bi * batch_size) % len(shuffled)
-        batch = shuffled[start:start + batch_size]
-        if len(batch) < batch_size:
-            batch += shuffled[:batch_size - len(batch)]
+    while len(samples) < num_samples:
+        # Build next batch, cycling through shuffled as needed
+        batch = []
+        for _ in range(batch_size):
+            if idx >= len(shuffled):
+                idx = 0
+                loop += 1
+                rng.shuffle(shuffled)
+            batch.append(shuffled[idx])
+            idx += 1
 
         mcq_lines = []
         for i, it in enumerate(batch, 1):
@@ -474,7 +490,16 @@ def build_synthetic_samples(
             opts_str = "\n".join(f"  {k}. {v}" for k, v in sorted(opts.items()))
             mcq_lines.append(f"第{i}题：{q}\n{opts_str}\n  正确答案：{ans_idx}")
 
-        user_msg = _SYNTH_USER.format(n=len(batch), mcq_text="\n\n".join(mcq_lines))
+        variation_hint = (
+            f"（这是第{loop + 1}轮复用，请与之前生成不同年龄/性别/症状细节的患者场景）"
+            if loop > 0 else ""
+        )
+        user_msg = _SYNTH_USER.format(
+            n=len(batch),
+            mcq_text="\n\n".join(mcq_lines),
+            variation_hint=variation_hint,
+        )
+        bi += 1
 
         try:
             kwargs: Dict[str, Any] = dict(
@@ -518,7 +543,10 @@ def build_synthetic_samples(
                     data = [data]
 
             for d in data:
-                if "input" not in d or "output" not in d:
+                if d is None:
+                    skipped_by_gpt += 1
+                    continue
+                if not isinstance(d, dict) or "input" not in d or "output" not in d:
                     continue
                 inp = d["input"]
                 out = d["output"]
@@ -541,23 +569,26 @@ def build_synthetic_samples(
             rate = len(samples) / max(elapsed, 1e-9)
             remaining = max(num_samples - len(samples), 0)
             eta = remaining / rate if rate > 0 else 0
+            loop_str = f" loop={loop}" if loop > 0 else ""
             print(
-                f"Batch {bi+1}/{num_batches}: {len(samples)}/{num_samples} "
-                f"({len(samples)/num_samples*100:.0f}%) "
+                f"Batch {bi}: {len(samples)}/{num_samples} "
+                f"({len(samples)/num_samples*100:.0f}%){loop_str} "
+                f"skipped_by_gpt={skipped_by_gpt} "
                 f"tokens={total_tokens:,} cost=${total_cost:.4f} "
                 f"eta={eta:.0f}s",
                 flush=True,
             )
 
-            if bi < num_batches - 1:
+            if len(samples) < num_samples:
                 time.sleep(0.5)
 
         except Exception as e:
-            print(f"Batch {bi+1} error: {e}", flush=True)
+            print(f"Batch {bi} error: {e}", flush=True)
             continue
 
     print(
         f"Synthetic: {len(samples)} samples | "
+        f"skipped_by_gpt={skipped_by_gpt} | "
         f"{total_tokens:,} tokens | ${total_cost:.4f}",
         flush=True,
     )
@@ -586,7 +617,7 @@ def main():
                         help="MCQs per GPT batch (synthetic mode)")
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--base_url", type=str, default=None)
-    parser.add_argument("--model", type=str, default="gpt-4.1")
+    parser.add_argument("--model", type=str, default="gpt-5.1")
     parser.add_argument("--price_in", type=float, default=0.0,
                         help="Input token price per 1M tokens")
     parser.add_argument("--price_out", type=float, default=0.0,
