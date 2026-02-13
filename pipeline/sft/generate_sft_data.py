@@ -20,7 +20,7 @@ Available agents:
     - drug_evidence_grader: 诊断/用药证据评分 (drugRAGandScore)
 
 Notes:
-    - diagnosis_generator 走 DAPT/QA 数据（train_sft.jsonl），不再用 LLM 合成结构化 SFT。
+    - diagnosis_generator 使用 build_diagnosis_sft.py 从 MCQ 数据提取临床场景生成 SFT 数据。
     - drug_recommender 不做 SFT，仅走 RAG + Schema 约束。
 """
 
