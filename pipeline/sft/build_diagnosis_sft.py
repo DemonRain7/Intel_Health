@@ -449,7 +449,8 @@ def build_synthetic_samples(
 ) -> List[Dict[str, Any]]:
     """Build SFT samples using GPT with MCQ knowledge as context.
 
-    Loops cyclically through items until num_samples is reached.
+    Single-pass: iterates through all items once (shuffled).
+    Stops early if num_samples is reached; stops at end of items otherwise.
     If output_path is given, flushes each batch immediately to disk (append mode).
     """
     from openai import OpenAI
@@ -466,22 +467,15 @@ def build_synthetic_samples(
     rng.shuffle(shuffled)
 
     samples: List[Dict[str, Any]] = []
-    idx = 0        # current position in shuffled
-    loop = 0       # how many times we've looped through all items
     bi = 0         # batch counter (for logging)
     skipped_by_gpt = 0
     start_ts = time.time()
 
-    while len(samples) < num_samples:
-        # Build next batch, cycling through shuffled as needed
-        batch = []
-        for _ in range(batch_size):
-            if idx >= len(shuffled):
-                idx = 0
-                loop += 1
-                rng.shuffle(shuffled)
-            batch.append(shuffled[idx])
-            idx += 1
+    for batch_start in range(0, len(shuffled), batch_size):
+        if len(samples) >= num_samples:
+            break
+
+        batch = shuffled[batch_start:batch_start + batch_size]
 
         mcq_lines = []
         for i, it in enumerate(batch, 1):
@@ -491,14 +485,10 @@ def build_synthetic_samples(
             opts_str = "\n".join(f"  {k}. {v}" for k, v in sorted(opts.items()))
             mcq_lines.append(f"第{i}题：{q}\n{opts_str}\n  正确答案：{ans_idx}")
 
-        variation_hint = (
-            f"（这是第{loop + 1}轮复用，请与之前生成不同年龄/性别/症状细节的患者场景）"
-            if loop > 0 else ""
-        )
         user_msg = _SYNTH_USER.format(
             n=len(batch),
             mcq_text="\n\n".join(mcq_lines),
-            variation_hint=variation_hint,
+            variation_hint="",
         )
         bi += 1
 
@@ -544,6 +534,8 @@ def build_synthetic_samples(
                     data = [data]
 
             for d in data:
+                if len(samples) >= num_samples:
+                    break
                 if d is None:
                     skipped_by_gpt += 1
                     continue
@@ -572,20 +564,16 @@ def build_synthetic_samples(
 
             elapsed = time.time() - start_ts
             rate = len(samples) / max(elapsed, 1e-9)
-            remaining = max(num_samples - len(samples), 0)
-            eta = remaining / rate if rate > 0 else 0
-            loop_str = f" loop={loop}" if loop > 0 else ""
+            scanned = batch_start + len(batch)
             print(
-                f"Batch {bi}: {len(samples)}/{num_samples} "
-                f"({len(samples)/num_samples*100:.0f}%){loop_str} "
+                f"Batch {bi}: {len(samples)}/{num_samples} | "
+                f"scanned {scanned}/{len(shuffled)} MCQs "
                 f"skipped_by_gpt={skipped_by_gpt} "
-                f"tokens={total_tokens:,} cost=${total_cost:.4f} "
-                f"eta={eta:.0f}s",
+                f"tokens={total_tokens:,} cost=${total_cost:.4f}",
                 flush=True,
             )
 
-            if len(samples) < num_samples:
-                time.sleep(0.5)
+            time.sleep(0.5)
 
         except Exception as e:
             print(f"Batch {bi} error: {e}", flush=True)
