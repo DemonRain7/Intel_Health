@@ -469,7 +469,6 @@ def build_synthetic_samples(
     samples: List[Dict[str, Any]] = []
     bi = 0         # batch counter (for logging)
     skipped_by_gpt = 0
-    start_ts = time.time()
 
     for batch_start in range(0, len(shuffled), batch_size):
         if len(samples) >= num_samples:
@@ -562,8 +561,6 @@ def build_synthetic_samples(
                     with open(output_path, "a", encoding="utf-8") as _f:
                         _f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-            elapsed = time.time() - start_ts
-            rate = len(samples) / max(elapsed, 1e-9)
             scanned = batch_start + len(batch)
             print(
                 f"Batch {bi}: {len(samples)}/{num_samples} | "
