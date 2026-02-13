@@ -395,14 +395,14 @@ def build_seed_samples(
 # ==================== Synthetic mode (GPT) ====================
 
 _SYNTH_SYSTEM = """\
-你是一个医学数据生成助手。对于给定的每道医学选择题，先判断它是否为临床诊断场景：
+你是一个医学数据生成助手。对于给定的每道医学选择题，判断能否从中提取出有效的"患者症状→诊断"训练数据：
 
-✓ 符合（生成数据）：题目描述了真实患者的症状/体征/检查结果，问的是"最可能的诊断"、\
-"最可能患有什么病"等诊断类问题。
-✗ 不符合（输出 null）：问的是治疗方案、用药选择、手术方式、辅助检查项目、病理机制、\
-预防措施等非诊断类问题。
+✓ 可用（生成数据）：题目包含真实患者情境——有患者的年龄/性别/症状/体征/化验或病史描述，\
+无论该题问的是诊断、治疗还是检查，只要能从中识别出主要疾病，就可以根据患者情境生成诊断场景。
+✗ 跳过（输出 null）：题目完全没有患者情境，仅讨论纯理论知识，例如：\
+药物作用机制、病理解剖结构、流行病学统计数字、纯粹的病因分类等无具体患者的题目。
 
-对于符合的题目，生成一条 SFT 数据：
+对于可用的题目，根据题目中的患者情境，创作一条 SFT 数据（无需照抄题目原文，可重新组织语言）：
 {
   "input": {
     "optimized_symptoms": "患者症状描述，50-100字，包含年龄性别、主诉、体征",
@@ -442,14 +442,15 @@ def build_synthetic_samples(
     batch_size: int = 5,
     api_key: str = "",
     base_url: str | None = None,
-    model: str = "gpt-4.1",
+    model: str = "gpt-5.1",
     price_in: float = 0.0,
     price_out: float = 0.0,
+    output_path: str | None = None,
 ) -> List[Dict[str, Any]]:
     """Build SFT samples using GPT with MCQ knowledge as context.
 
-    Only processes clinical diagnosis MCQs (pre-filtered). Loops cyclically
-    through valid items until num_samples is reached.
+    Loops cyclically through items until num_samples is reached.
+    If output_path is given, flushes each batch immediately to disk (append mode).
     """
     from openai import OpenAI
 
@@ -558,12 +559,16 @@ def build_synthetic_samples(
                     inp.get("ragContext", ""),
                 )
                 gpt = json.dumps(out, ensure_ascii=False)
-                samples.append({
+                record = {
                     "conversations": [
                         {"from": "human", "value": human},
                         {"from": "gpt", "value": gpt},
                     ]
-                })
+                }
+                samples.append(record)
+                if output_path:
+                    with open(output_path, "a", encoding="utf-8") as _f:
+                        _f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
             elapsed = time.time() - start_ts
             rate = len(samples) / max(elapsed, 1e-9)
@@ -669,6 +674,11 @@ def main():
             return
         target = max(args.num_samples - existing - len(samples), 0)
         if target > 0:
+            # Clear output file before synthetic run only if not resuming
+            synth_mode = "a" if (args.resume and existing > 0) else "w"
+            if synth_mode == "w" and os.path.exists(args.output):
+                open(args.output, "w").close()  # truncate
+
             synth = build_synthetic_samples(
                 items, target,
                 batch_size=args.batch_size,
@@ -677,26 +687,28 @@ def main():
                 model=args.model,
                 price_in=args.price_in,
                 price_out=args.price_out,
+                output_path=args.output,  # flush each batch to disk
             )
             samples.extend(synth)
 
-    # ---- Write ----
-    start_ts = time.time()
-    mode = "a" if (args.resume and existing > 0) else "w"
-    written = 0
-    with open(args.output, mode, encoding="utf-8") as f:
-        for s in samples:
-            f.write(json.dumps(s, ensure_ascii=False) + "\n")
-            written += 1
-            if args.progress_every > 0 and written % args.progress_every == 0:
-                print(f"Writing: {written}/{len(samples)}", flush=True)
-
-    elapsed = time.time() - start_ts
-    print(
-        f"Saved {written} samples -> {output_abs} "
-        f"(total: {existing + written}) in {elapsed:.1f}s",
-        flush=True,
-    )
+    # ---- Write seed samples (synthetic already written incrementally) ----
+    if args.seed_mode and samples:
+        start_ts = time.time()
+        mode = "a" if (args.resume and existing > 0) else "w"
+        written = 0
+        with open(args.output, mode, encoding="utf-8") as f:
+            for s in samples:
+                f.write(json.dumps(s, ensure_ascii=False) + "\n")
+                written += 1
+        elapsed = time.time() - start_ts
+        print(
+            f"Saved {written} seed samples -> {output_abs} "
+            f"(total: {existing + written}) in {elapsed:.1f}s",
+            flush=True,
+        )
+    elif args.synthetic_mode:
+        total = existing + len(samples)
+        print(f"Done. Total samples in {output_abs}: {total}", flush=True)
 
 
 if __name__ == "__main__":
