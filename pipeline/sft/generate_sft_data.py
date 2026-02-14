@@ -564,7 +564,7 @@ class SFTDataGenerator:
         self,
         api_key: str,
         base_url: str = None,
-        model: str = "gpt-4.1",
+        model: str = "gpt-5-mini",
         input_price_per_million: float = 0.0,
         output_price_per_million: float = 0.0
     ):
@@ -1118,8 +1118,8 @@ def main():
                         help="OpenAI API Key (也可通过环境变量 OPENAI_API_KEY 设置)")
     parser.add_argument("--base_url", type=str, default=None,
                         help="API Base URL (可选)")
-    parser.add_argument("--model", type=str, default="gpt-4.1",
-                        help="使用的模型（默认 gpt-4.1，避免 gpt-4o）")
+    parser.add_argument("--model", type=str, default="gpt-5-mini",
+                        help="使用的模型（默认 gpt-5-mini）")
     parser.add_argument("--price_in", type=float, default=0.0,
                         help="输入token价格（每1M tokens），用于成本估算")
     parser.add_argument("--price_out", type=float, default=0.0,

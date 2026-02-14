@@ -5,7 +5,7 @@ Preprocess/Symptom Normalizer SFT builder (multi-stage).
 Pipeline:
 1) gpt-5-mini (seed model) generates a natural complaint narrative.
 2) gpt-5-mini maps narrative to fixed fields (body_part/symptoms/duration/severity).
-3) gpt-4.1 generates standardized output (optimized_symptoms + rag_keywords).
+3) gpt-5.1 generates standardized output (optimized_symptoms + rag_keywords).
 
 Output supports instruction or conversation format.
 """
@@ -224,7 +224,7 @@ def main():
     parser.add_argument("--num_samples", type=int, default=500)
     parser.add_argument("--output", type=str, required=True)
     parser.add_argument("--seed_model", type=str, default="gpt-5-mini")
-    parser.add_argument("--final_model", type=str, default="gpt-4.1")
+    parser.add_argument("--final_model", type=str, default="gpt-5.1")
     parser.add_argument("--api_key", type=str, default=None)
     parser.add_argument("--base_url", type=str, default=None)
     parser.add_argument("--output_format", type=str, default="conversation", choices=["conversation", "instruction"])

@@ -19,7 +19,7 @@ import { buildDiagnosisPrompt } from "./prompts/diagnosis_generator.mjs";
 import { buildDrugEvidencePrompt } from "./prompts/drug_evidence_grader.mjs";
 import { buildDrugRecommendPrompt } from "./prompts/drug_recommender.mjs";
 
-const DEFAULT_GPT_MODEL = process.env.OPENAI_MODEL_NAME || "gpt-4.1";
+const DEFAULT_GPT_MODEL = process.env.OPENAI_MODEL_NAME || "gpt-5-mini";
 const DEFAULT_LOCAL_MODEL = process.env.LOCAL_MODEL_NAME || "Qwen/Qwen3-0.6B";
 const DEFAULT_LOCAL_URL = process.env.LOCAL_MODEL_URL || "http://localhost:8000/v1";
 const RAG_BACKEND = process.env.RAG_BACKEND || "pgvector";

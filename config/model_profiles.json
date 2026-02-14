@@ -143,10 +143,30 @@
       }
     }
   },
-  "quality": {
-    "name": "quality",
-    "description": "Reserved profile (disabled)",
-    "disabled": true,
-    "agents": {}
+  "gpt_mini": {
+    "name": "gpt_mini",
+    "description": "All agents use OpenAI gpt-5-mini (fast, cost-effective)",
+    "agents": {
+      "symptom_normalizer":     { "model_type": "gpt", "model_name": "gpt-5-mini" },
+      "symptom_quality_grader": { "model_type": "gpt", "model_name": "gpt-5-mini" },
+      "rag_relevance_grader":   { "model_type": "gpt", "model_name": "gpt-5-mini" },
+      "diagnosis_generator":    { "model_type": "gpt", "model_name": "gpt-5-mini" },
+      "drug_evidence_grader":   { "model_type": "gpt", "model_name": "gpt-5-mini" },
+      "drug_recommender":       { "model_type": "gpt", "model_name": "gpt-5-mini" },
+      "output_formatter":       { "model_type": "gpt", "model_name": "gpt-5-mini" }
+    }
+  },
+  "gpt_quality": {
+    "name": "gpt_quality",
+    "description": "All agents use OpenAI gpt-5.1 (highest quality)",
+    "agents": {
+      "symptom_normalizer":     { "model_type": "gpt", "model_name": "gpt-5.1" },
+      "symptom_quality_grader": { "model_type": "gpt", "model_name": "gpt-5.1" },
+      "rag_relevance_grader":   { "model_type": "gpt", "model_name": "gpt-5.1" },
+      "diagnosis_generator":    { "model_type": "gpt", "model_name": "gpt-5.1" },
+      "drug_evidence_grader":   { "model_type": "gpt", "model_name": "gpt-5.1" },
+      "drug_recommender":       { "model_type": "gpt", "model_name": "gpt-5.1" },
+      "output_formatter":       { "model_type": "gpt", "model_name": "gpt-5.1" }
+    }
   }
 }
