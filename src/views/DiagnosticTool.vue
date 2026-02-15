@@ -30,11 +30,16 @@
       <div class="step-line"></div>
       <div class="step" :class="{ active: step >= 3, completed: step > 3 }">
         <div class="step-number">3</div>
+        <div class="step-label">确认预处理</div>
+      </div>
+      <div class="step-line"></div>
+      <div class="step" :class="{ active: step >= 4, completed: step > 4 }">
+        <div class="step-number">4</div>
         <div class="step-label">分析中</div>
       </div>
       <div class="step-line"></div>
-      <div class="step" :class="{ active: step >= 4 }">
-        <div class="step-number">4</div>
+      <div class="step" :class="{ active: step >= 5 }">
+        <div class="step-number">5</div>
         <div class="step-label">诊断结果</div>
       </div>
     </div>
@@ -182,16 +187,7 @@
           
           <!-- 模型档位与高级覆盖 -->
           <div class="model-section mb-5" style="margin-top: 60px;">
-            <div class="flex items-center justify-between">
-              <h3 class="mb-4 section-heading">选择模型档位:</h3>
-              <button
-                type="button"
-                class="text-sm text-blue-600 hover:text-blue-500"
-                @click="showAdvanced = !showAdvanced"
-              >
-                {{ showAdvanced ? '收起高级覆盖' : '高级覆盖' }}
-              </button>
-            </div>
+            <h3 class="mb-4 section-heading">选择模型档位:</h3>
 
             <div class="custom-select">
               <select v-model="selectedProfileId" class="select-dropdown">
@@ -204,19 +200,22 @@
               当前档位将决定各 Agent 的默认模型配置。
             </div>
 
-            <div v-if="showAdvanced" class="mt-4 space-y-4">
-              <div v-for="agent in overrideAgents" :key="agent.id" class="bg-gray-50 rounded-lg p-4">
-                <div class="font-medium text-gray-700 mb-2">{{ agent.name }}</div>
-                <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <select v-model="agentOverrides[agent.id].model_type" class="select-dropdown">
-                    <option value="">跟随档位</option>
-                    <option value="local">本地 Qwen</option>
-                    <option value="gpt">云端 GPT</option>
+            <!-- 混合系列才显示 GPT 覆盖选项 -->
+            <div v-if="selectedProfileId === 'hybrid'" class="mt-4 space-y-4">
+              <div class="bg-blue-50 rounded-lg p-4">
+                <div class="font-medium text-gray-700 mb-3">选择要使用 GPT 云端模型的 Agent：</div>
+                <div v-for="agent in overrideAgents" :key="agent.id" class="flex items-center gap-3 mb-3">
+                  <label class="flex items-center gap-2 min-w-[120px]">
+                    <input type="checkbox" v-model="agentOverrides[agent.id].useGpt" class="form-checkbox" />
+                    <span class="text-gray-700">{{ agent.name }}</span>
+                  </label>
+                  <select v-if="agentOverrides[agent.id].useGpt" v-model="agentOverrides[agent.id].model_name" class="select-dropdown" style="max-width: 200px;">
+                    <option value="gpt-5-mini">gpt-5-mini（快速）</option>
+                    <option value="gpt-5.1">gpt-5.1（高质量）</option>
+                    <option value="gpt-4.1">gpt-4.1（经典）</option>
                   </select>
-                  <input v-model="agentOverrides[agent.id].model_name" class="form-input" placeholder="模型名称 (可选)" />
-                  <input v-model="agentOverrides[agent.id].base_url" class="form-input" placeholder="本地 API Base URL (可选)" />
                 </div>
-                <p class="text-xs text-gray-500 mt-2">未填写的字段将沿用档位配置。</p>
+                <p class="text-xs text-gray-500 mt-2">未勾选的 Agent 将继续使用本地 Qwen 模型。</p>
               </div>
             </div>
           </div>
@@ -233,17 +232,95 @@
         </div>
       </div>
 
-      <!-- 步骤3: 分析中 -->
-      <div v-if="step === 3" class="step-content step3-content text-center">
-        <div class="analysis-loading">
+      <!-- 步骤3: 确认 AI 预处理结果 -->
+      <div v-if="step === 3" class="step-content step3-review">
+        <h2 class="mb-2">确认 AI 预处理结果</h2>
+        <p class="text-gray-500 mb-4">
+          AI 已将您的症状描述标准化，并提取了用于医学文献检索的关键词。请检查是否准确，如有不符可直接修改。
+        </p>
+
+        <!-- 预处理加载中 -->
+        <div v-if="preprocessLoading" class="text-center py-8">
           <div class="spinner"></div>
-          <h2 class="mt-4">AI诊断系统正在分析您的症状...</h2>
-          <p>这可能需要几十秒钟时间，请耐心等待。</p>
+          <p class="mt-4 text-gray-500">AI 正在整理您的症状描述...</p>
+        </div>
+
+        <div v-else>
+          <!-- optimized_symptoms -->
+          <div class="review-field mb-5">
+            <label class="review-label">
+              标准化症状描述
+              <span class="review-hint">（AI 将您的口语描述转换为结构化的医学描述，后续所有诊断环节都基于此文本）</span>
+            </label>
+            <textarea v-model="reviewOptimizedSymptoms" class="review-textarea" rows="4"></textarea>
+          </div>
+
+          <!-- rag_keywords -->
+          <div class="review-field mb-5">
+            <label class="review-label">
+              检索关键词
+              <span class="review-hint">（系统将用这些关键词在医学知识库中查找相关资料，辅助诊断判断）</span>
+            </label>
+            <div class="review-keywords">
+              <div v-for="(kw, idx) in reviewRagKeywords" :key="idx" class="keyword-chip">
+                <input v-model="reviewRagKeywords[idx]" class="keyword-input" />
+                <button class="keyword-remove" @click="reviewRagKeywords.splice(idx, 1)">&times;</button>
+              </div>
+              <button class="keyword-add" @click="reviewRagKeywords.push('')">+ 添加关键词</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 导航按钮 -->
+        <div class="step-navigation">
+          <button class="btn btn-secondary" @click="step = 2">
+            <i class="fas fa-arrow-left"></i> 返回修改
+          </button>
+          <button class="btn btn-primary" @click="confirmAndStartAnalysis" :disabled="preprocessLoading">
+            确认并开始诊断 <i class="fas fa-arrow-right"></i>
+          </button>
         </div>
       </div>
 
-      <!-- 步骤4: 诊断结果 -->
-      <div v-if="step === 4" class="step-content step4-content">
+      <!-- 步骤4: 分析中（实时进度） -->
+      <div v-if="step === 4" class="step-content step4-analysis">
+        <div class="analysis-loading text-center">
+          <div class="spinner"></div>
+          <h2 class="mt-4">AI诊断系统正在分析您的症状...</h2>
+          <p class="text-gray-500 mb-6">Pipeline 实时进度</p>
+        </div>
+        <!-- 进度条 -->
+        <div class="pipeline-progress">
+          <div class="progress-bar-container mb-4">
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" :style="{ width: progressPercent + '%' }"></div>
+            </div>
+            <span class="progress-text">{{ progressPercent }}%</span>
+          </div>
+          <!-- 步骤列表 -->
+          <div class="progress-steps">
+            <div v-for="(pStep, idx) in progressSteps" :key="idx"
+                 class="progress-step"
+                 :class="{ done: true }">
+              <div class="step-icon">&#10003;</div>
+              <div class="step-info">
+                <div class="step-label">{{ pStep.label }}</div>
+                <div class="step-detail" v-if="pStep.detail">{{ pStep.detail }}</div>
+              </div>
+            </div>
+            <!-- 当前执行中的步骤 -->
+            <div v-if="currentStepLabel" class="progress-step active">
+              <div class="step-icon spinning">&#9881;</div>
+              <div class="step-info">
+                <div class="step-label">{{ currentStepLabel }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 步骤5: 诊断结果 -->
+      <div v-if="step === 5" class="step-content step5-content">
         <div class="result-header">
           <h2 class="mb-2">诊断结果分析</h2>
           <p class="result-time">生成时间: {{ formattedDate }}</p>
@@ -290,12 +367,25 @@
         
         <!-- 建议 -->
         <div class="recommendations mb-5">
-  <h3 class="mb-3">建议:</h3>
-  <ul class="recommendation-list">
-    <li v-for="(item, index) in diagnosisRecomm" :key="index">{{ item }}</li>
-  </ul>
-</div>
-        
+          <h3 class="mb-3">建议:</h3>
+          <ul class="recommendation-list">
+            <li v-for="(item, index) in diagnosisRecomm" :key="index">{{ item }}</li>
+          </ul>
+        </div>
+
+        <!-- 各 Agent 使用的模型 -->
+        <div v-if="agentModelsMap && Object.keys(agentModelsMap).length > 0" class="agent-models-section mb-5">
+          <h3 class="mb-3">Pipeline 模型配置:</h3>
+          <div class="agent-models-grid">
+            <div v-for="(info, agent) in agentModelsMap" :key="agent" class="agent-model-tag">
+              <span class="agent-name">{{ AGENT_LABELS[agent] || agent }}</span>
+              <span class="model-badge" :class="info.type === 'gpt' ? 'badge-gpt' : 'badge-local'">
+                {{ info.model }}
+              </span>
+            </div>
+          </div>
+        </div>
+
         <!-- 导航按钮 -->
         <div class="step-navigation">
           <button class="btn btn-secondary" @click="step = 2">
@@ -342,17 +432,26 @@ export default {
     
     // 模型档位与高级覆盖
     const modelProfiles = MODEL_PROFILES;
-    const selectedProfileId = ref(modelProfiles[0]?.id || 'fast');
-    const showAdvanced = ref(false);
+    const selectedProfileId = ref(modelProfiles[0]?.id || 'balanced');
     const overrideAgents = [
       { id: 'symptom_normalizer', name: '症状规范化' },
+      { id: 'symptom_quality_grader', name: '症状质量评分' },
+      { id: 'rag_relevance_grader', name: 'RAG 相关度评分' },
       { id: 'diagnosis_generator', name: '诊断生成' },
-      { id: 'drug_recommender', name: '用药推荐' }
+      { id: 'drug_evidence_grader', name: '用药证据评分' },
+      { id: 'drug_recommender', name: '用药推荐' },
+      { id: 'diagnosis_reviewer', name: '诊断概率校验' },
+      { id: 'output_formatter', name: '输出格式化' },
     ];
     const agentOverrides = reactive({
-      symptom_normalizer: { model_type: '', model_name: '', base_url: '' },
-      diagnosis_generator: { model_type: '', model_name: '', base_url: '' },
-      drug_recommender: { model_type: '', model_name: '', base_url: '' }
+      symptom_normalizer: { useGpt: false, model_name: 'gpt-5-mini' },
+      symptom_quality_grader: { useGpt: false, model_name: 'gpt-5-mini' },
+      rag_relevance_grader: { useGpt: false, model_name: 'gpt-5-mini' },
+      diagnosis_generator: { useGpt: false, model_name: 'gpt-5-mini' },
+      drug_evidence_grader: { useGpt: false, model_name: 'gpt-5-mini' },
+      drug_recommender: { useGpt: false, model_name: 'gpt-5-mini' },
+      diagnosis_reviewer: { useGpt: false, model_name: 'gpt-5-mini' },
+      output_formatter: { useGpt: false, model_name: 'gpt-5-mini' },
     });
     
     // 错误信息
@@ -361,11 +460,39 @@ export default {
       duration: ''
     });
     
+    // Agent 中文名映射
+    const AGENT_LABELS = {
+      symptom_normalizer: '症状规范化',
+      symptom_quality_grader: '质量评分',
+      rag_retriever: 'RAG 检索',
+      rag_relevance_grader: '相关度评分',
+      diagnosis_generator: '诊断生成',
+      drug_evidence_grader: '用药证据评分',
+      drug_recommender: '用药推荐',
+      diagnosis_reviewer: '概率校验',
+      output_formatter: '输出格式化',
+    };
+
     // 诊断结果
     const diagnosisResults = ref([]);
     const diagnosisRecomm = ref([]);
     const diagnosisRecomm_short = ref([]);
     const formattedDate = ref('');
+    const agentModelsMap = ref({});
+
+    // 预处理确认步骤（step 3）
+    const preprocessLoading = ref(false);
+    const reviewOptimizedSymptoms = ref('');
+    const reviewRagKeywords = ref([]);
+
+    // Pipeline 实时进度
+    const progressSteps = ref([]);   // 已完成的步骤 [{ label, detail }]
+    const currentStepLabel = ref(''); // 当前正在执行的步骤名
+    const progressPercent = computed(() => {
+      const total = 9; // pipeline 总节点数
+      const done = progressSteps.value.length;
+      return Math.min(Math.round((done / total) * 100), 100);
+    });
     
     // 步骤控制
     const step = ref(1);
@@ -557,64 +684,101 @@ export default {
     };
     
     const buildAgentOverridesPayload = () => {
+      if (selectedProfileId.value !== 'hybrid') return {};
       const payload = {};
       overrideAgents.forEach(agent => {
         const cfg = agentOverrides[agent.id];
-        if (!cfg) return;
-        const hasValue = [cfg.model_type, cfg.model_name, cfg.base_url]
-          .some(v => v && String(v).trim().length > 0);
-        if (hasValue) {
-          payload[agent.id] = {
-            ...(cfg.model_type ? { model_type: cfg.model_type } : {}),
-            ...(cfg.model_name ? { model_name: cfg.model_name } : {}),
-            ...(cfg.base_url ? { base_url: cfg.base_url } : {})
-          };
-        }
+        if (!cfg || !cfg.useGpt) return;
+        payload[agent.id] = {
+          model_type: 'gpt',
+          model_name: cfg.model_name || 'gpt-5-mini'
+        };
       });
       return payload;
     };
 
-    // 进行分析
+    // 构建通用诊断数据
+    const buildDiagnosisPayload = () => {
+      const overridePayload = buildAgentOverridesPayload();
+      const symptomNames = selectedSymptoms.value.map(id => {
+        const s = symptoms.value.find(sym => sym.id === id);
+        return s ? s.name : id;
+      });
+      return {
+        user_id: userStore.userId,
+        body_part: selectedBodyPart.value,
+        symptoms: selectedSymptoms.value,
+        symptom_names: symptomNames,
+        other_symptoms: otherSymptoms.value,
+        severity: severityLevel.value,
+        duration: duration.value,
+        model_profile_id: selectedProfileId.value,
+        agent_overrides: overridePayload
+      };
+    };
+
+    // 步骤 2 → 3：预处理（只运行 symptom_normalizer）
     const proceedToAnalysis = async () => {
       if (!validateForm()) return;
-      
-      // 检查用户是否已登录
+
       if (!userStore.isAuthenticated) {
         alert('请先登录，未登录用户无法保存诊断记录！');
-        // 可以选择跳转到登录页面
         router.push('/login');
         return;
       }
-      
-      // 转到分析中状态
+
       step.value = 3;
-      
+      preprocessLoading.value = true;
+
       try {
-        // 组装诊断数据 - 使用snake_case匹配后端期望的格式
-        const overridePayload = buildAgentOverridesPayload();
-        const diagnosisData = {
-          user_id: userStore.userId,
-          body_part: selectedBodyPart.value,
-          symptoms: selectedSymptoms.value,
-          other_symptoms: otherSymptoms.value,
-          severity: severityLevel.value,
-          duration: duration.value,
-          model_profile_id: selectedProfileId.value,
-          agent_overrides: overridePayload
-        };
-        
-        console.log('发送诊断数据:', diagnosisData);
-        
-        // 发送诊断请求到后端
-        const response = await diagnosesApi.create(diagnosisData);
+        const payload = buildDiagnosisPayload();
+        console.log('发送预处理请求:', payload);
+        const res = await diagnosesApi.preprocess(payload);
+        reviewOptimizedSymptoms.value = res.data.optimized_symptoms || '';
+        reviewRagKeywords.value = res.data.rag_keywords || [];
+      } catch (error) {
+        console.error('预处理失败:', error);
+        const msg = error.message || error.response?.data?.message || '';
+        if (msg.includes('ECONNREFUSED') || msg.includes('Connection error')) {
+          alert('本地模型服务未启动（127.0.0.1:8000 连接失败）。\n\n请先启动本地推理服务器，或切换到「混合系列」档位并开启 GPT 覆盖。');
+        } else {
+          alert(`预处理出错：${msg || '未知错误'}`);
+        }
+        step.value = 2;
+      } finally {
+        preprocessLoading.value = false;
+      }
+    };
+
+    // 步骤 3 → 4 → 5：用户确认后启动完整 pipeline
+    const confirmAndStartAnalysis = async () => {
+      step.value = 4;
+      progressSteps.value = [];
+      currentStepLabel.value = '正在启动诊断 Pipeline...';
+
+      try {
+        const payload = buildDiagnosisPayload();
+        // 注入用户确认/修改后的预处理结果
+        payload._confirmed_optimized_symptoms = reviewOptimizedSymptoms.value;
+        payload._confirmed_rag_keywords = reviewRagKeywords.value.filter(k => k.trim());
+
+        console.log('发送诊断数据（含用户确认预处理）:', payload);
+
+        const response = await diagnosesApi.createWithSSE(payload, (progress) => {
+          const detail = formatProgressDetail(progress);
+          progressSteps.value.push({ label: progress.label, detail });
+          currentStepLabel.value = progress.step < progress.total
+            ? '准备下一步...'
+            : '正在保存结果...';
+        });
         console.log('收到诊断响应:', response.data);
-        
-        // 设置结果
+        currentStepLabel.value = '';
+
         diagnosisResults.value = response.data.results || [];
         diagnosisRecomm_short.value = response.data.recomm_short || [];
         diagnosisRecomm.value = response.data.recommendations || [];
-        
-        // 格式化日期
+        agentModelsMap.value = response.data.agent_models || {};
+
         const date = new Date(response.data.created_at || new Date());
         formattedDate.value = new Intl.DateTimeFormat('zh-CN', {
           year: 'numeric',
@@ -623,20 +787,24 @@ export default {
           hour: '2-digit',
           minute: '2-digit'
         }).format(date);
-        
-        // 等待一点时间模拟 AI 分析过程
+
         setTimeout(() => {
-          step.value = 4;
-          // 在下一轮事件循环中初始化图表，确保DOM已经渲染
+          step.value = 5;
           setTimeout(() => {
             initChart();
-            initWordCloud(); // 初始化词云图
+            initWordCloud();
           }, 0);
-        }, 1500);
+        }, 500);
       } catch (error) {
         console.error('分析错误:', error);
-        alert('分析过程中出现错误，请稍后再试');
-        step.value = 2;
+        const msg = error.message || '';
+        if (msg.includes('ECONNREFUSED') || msg.includes('Connection error')) {
+          alert('本地模型服务未启动（127.0.0.1:8000 连接失败）。\n\n请先启动本地推理服务器，或切换到「混合系列」档位并开启 GPT 覆盖。');
+        } else {
+          alert(`诊断 Pipeline 出错：${msg || '未知错误，请稍后再试'}`);
+        }
+        currentStepLabel.value = '';
+        step.value = 3;
       }
     };
     
@@ -647,12 +815,10 @@ export default {
       otherSymptoms.value = '';
       severityLevel.value = 3;
       duration.value = '';
-      selectedProfileId.value = modelProfiles[0]?.id || 'fast';
-      showAdvanced.value = false;
+      selectedProfileId.value = modelProfiles[0]?.id || 'balanced';
       Object.keys(agentOverrides).forEach(key => {
-        agentOverrides[key].model_type = '';
-        agentOverrides[key].model_name = '';
-        agentOverrides[key].base_url = '';
+        agentOverrides[key].useGpt = false;
+        agentOverrides[key].model_name = 'gpt-5-mini';
       });
       step.value = 1;
       
@@ -669,6 +835,35 @@ export default {
       }
     };
     
+    // 格式化进度详情摘要
+    const formatProgressDetail = (progress) => {
+      const d = progress.data || {};
+      switch (progress.node) {
+        case 'symptom_normalizer':
+          return d.optimized_symptoms
+            ? `优化后: ${d.optimized_symptoms.slice(0, 60)}...`
+            : '';
+        case 'symptom_quality_grader':
+          return d.score != null ? `评分: ${d.score}/5 — ${d.comment || ''}` : '';
+        case 'rag_retriever':
+          return d.doc_count != null ? `检索到 ${d.doc_count} 篇文档` : '';
+        case 'rag_relevance_grader':
+          return d.rag_score != null ? `相关度: ${d.rag_score}/5` : '';
+        case 'diagnosis_generator':
+          return d.conditions
+            ? d.conditions.map(c => `${c.condition} ${(c.probability * 100).toFixed(0)}%`).join(', ')
+            : '';
+        case 'diagnosis_reviewer':
+          return d.adjusted
+            ? '概率已校验: ' + d.adjusted.map(c => `${c.condition} ${(c.probability * 100).toFixed(0)}%`).join(', ')
+            : '';
+        case 'drug_recommender':
+          return d.drug_count != null ? `生成 ${d.drug_count} 条建议` : '';
+        default:
+          return '';
+      }
+    };
+
     // 获取默认症状描述
     const getDefaultDescription = (symptomName) => {
       // 根据症状名称提供默认描述
@@ -718,7 +913,6 @@ export default {
       durationOptions,
       modelProfiles,
       selectedProfileId,
-      showAdvanced,
       overrideAgents,
       agentOverrides,
       errors,
@@ -735,7 +929,16 @@ export default {
       chartContainer,
       wordCloudContainer,
       validateForm,
-      getDefaultDescription
+      getDefaultDescription,
+      progressSteps,
+      currentStepLabel,
+      progressPercent,
+      agentModelsMap,
+      AGENT_LABELS,
+      preprocessLoading,
+      reviewOptimizedSymptoms,
+      reviewRagKeywords,
+      confirmAndStartAnalysis,
     };
   }
 };
@@ -1171,5 +1374,226 @@ export default {
   .step-label {
     display: none;
   }
+}
+
+/* Pipeline 实时进度 */
+.pipeline-progress {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.progress-bar-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-bar-bg {
+  flex: 1;
+  height: 8px;
+  background: #e5e7eb;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3273dc, #22c55e);
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.progress-text {
+  font-size: 14px;
+  font-weight: 600;
+  color: #3273dc;
+  min-width: 40px;
+  text-align: right;
+}
+
+.progress-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+}
+
+.progress-step.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.progress-step .step-icon {
+  font-size: 14px;
+  color: #22c55e;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.progress-step.active .step-icon {
+  color: #3273dc;
+}
+
+.progress-step.active .step-icon.spinning {
+  animation: spin 1.5s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.progress-step .step-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.progress-step .step-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  display: block;
+}
+
+.progress-step .step-detail {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+  word-break: break-all;
+}
+
+/* 预处理确认步骤 */
+.step3-review {
+  max-width: 800px;
+  margin: 0 auto;
+}
+.review-field {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 20px;
+}
+.review-label {
+  display: block;
+  font-weight: 600;
+  color: #1e293b;
+  margin-bottom: 8px;
+  font-size: 15px;
+}
+.review-hint {
+  font-weight: 400;
+  color: #64748b;
+  font-size: 13px;
+}
+.review-textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 1.6;
+  resize: vertical;
+  font-family: inherit;
+}
+.review-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+.review-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.keyword-chip {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: #dbeafe;
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+.keyword-input {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: #1d4ed8;
+  width: auto;
+  min-width: 60px;
+  max-width: 200px;
+  outline: none;
+}
+.keyword-remove {
+  background: none;
+  border: none;
+  color: #93c5fd;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+}
+.keyword-remove:hover {
+  color: #dc2626;
+}
+.keyword-add {
+  background: none;
+  border: 1px dashed #94a3b8;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 13px;
+  color: #64748b;
+  cursor: pointer;
+}
+.keyword-add:hover {
+  border-color: #3b82f6;
+  color: #3b82f6;
+}
+
+/* Agent 模型信息 */
+.agent-models-section h3 {
+  color: #1e293b;
+}
+.agent-models-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.agent-model-tag {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+.agent-model-tag .agent-name {
+  color: #475569;
+  font-weight: 500;
+}
+.model-badge {
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.model-badge.badge-local {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.model-badge.badge-gpt {
+  background: #dcfce7;
+  color: #166534;
 }
 </style>

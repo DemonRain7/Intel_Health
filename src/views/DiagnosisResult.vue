@@ -332,10 +332,13 @@ export default {
     // 获取症状名称列表
     const getSymptomNames = (symptomIds) => {
       if (!symptomIds || !Array.isArray(symptomIds)) return [];
-      
+      // 优先使用存储的 symptom_names（解决 UUID 显示问题）
+      if (diagnosis.value && Array.isArray(diagnosis.value.symptom_names) && diagnosis.value.symptom_names.length > 0) {
+        return diagnosis.value.symptom_names;
+      }
       return symptomIds.map(id => {
         const symptom = COMMON_SYMPTOMS.find(s => s.id === id);
-        return symptom ? symptom.name : id;
+        return symptom ? symptom.name : '';
       }).filter(Boolean);
     };
     

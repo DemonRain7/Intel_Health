@@ -1,97 +1,109 @@
 {
-  "fast": {
-    "name": "fast",
-    "description": "Each agent uses its own 0.5B local model endpoint with local-path fallback",
+  "balanced": {
+    "name": "标准(Qwen系列)",
+    "description": "诊断使用 Qwen3-1.7B，其余 Agent 使用 Qwen3-0.6B（本地推理）",
     "agents": {
       "symptom_normalizer": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "symptom_normalizer",
         "model_path": "models/merged/symptom_normalizer",
-        "base_url": "http://127.0.0.1:8101/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "symptom_quality_grader": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "symptom_quality_grader",
         "model_path": "models/merged/symptom_quality_grader",
-        "base_url": "http://127.0.0.1:8102/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "rag_relevance_grader": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "rag_relevance_grader",
         "model_path": "models/merged/rag_relevance_grader",
-        "base_url": "http://127.0.0.1:8103/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "diagnosis_generator": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "diagnosis_generator",
         "model_path": "models/merged/diagnosis_generator",
-        "base_url": "http://127.0.0.1:8104/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "drug_evidence_grader": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "drug_evidence_grader",
         "model_path": "models/merged/drug_evidence_grader",
-        "base_url": "http://127.0.0.1:8105/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "drug_recommender": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "drug_recommender",
         "model_path": "models/merged/drug_recommender",
-        "base_url": "http://127.0.0.1:8106/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "diagnosis_reviewer": {
+        "model_type": "local",
+        "model_name": "diagnosis_reviewer",
+        "model_path": "models/merged/diagnosis_reviewer",
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "output_formatter": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "output_formatter",
         "model_path": "models/merged/output_formatter",
-        "base_url": "http://127.0.0.1:8107/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       }
     }
   },
-  "balanced": {
-    "name": "balanced",
-    "description": "Each agent keeps independent endpoint, diagnosis/drug use 1.7B fallback model_name",
+  "hybrid": {
+    "name": "混合系列",
+    "description": "默认使用本地 Qwen 模型，可通过高级覆盖切换部分 Agent 到 GPT 云端模型",
     "agents": {
       "symptom_normalizer": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "symptom_normalizer",
         "model_path": "models/merged/symptom_normalizer",
-        "base_url": "http://127.0.0.1:8101/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "symptom_quality_grader": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "symptom_quality_grader",
         "model_path": "models/merged/symptom_quality_grader",
-        "base_url": "http://127.0.0.1:8102/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "rag_relevance_grader": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "rag_relevance_grader",
         "model_path": "models/merged/rag_relevance_grader",
-        "base_url": "http://127.0.0.1:8103/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "diagnosis_generator": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-1.7B",
+        "model_name": "diagnosis_generator",
         "model_path": "models/merged/diagnosis_generator",
-        "base_url": "http://127.0.0.1:8104/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "drug_evidence_grader": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "drug_evidence_grader",
         "model_path": "models/merged/drug_evidence_grader",
-        "base_url": "http://127.0.0.1:8105/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "drug_recommender": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-1.7B",
+        "model_name": "drug_recommender",
         "model_path": "models/merged/drug_recommender",
-        "base_url": "http://127.0.0.1:8106/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
+      "diagnosis_reviewer": {
+        "model_type": "local",
+        "model_name": "diagnosis_reviewer",
+        "model_path": "models/merged/diagnosis_reviewer",
+        "base_url": "http://127.0.0.1:8000/v1"
       },
       "output_formatter": {
         "model_type": "local",
-        "model_name": "Qwen/Qwen3-0.6B",
+        "model_name": "output_formatter",
         "model_path": "models/merged/output_formatter",
-        "base_url": "http://127.0.0.1:8107/v1"
+        "base_url": "http://127.0.0.1:8000/v1"
       }
     }
   },
@@ -135,38 +147,18 @@
         "model_path": "models/merged/drug_recommender",
         "base_url": "http://127.0.0.1:8000/v1"
       },
+      "diagnosis_reviewer": {
+        "model_type": "local",
+        "model_name": "diagnosis_reviewer",
+        "model_path": "models/merged/diagnosis_reviewer",
+        "base_url": "http://127.0.0.1:8000/v1"
+      },
       "output_formatter": {
         "model_type": "local",
         "model_name": "output_formatter",
         "model_path": "models/merged/output_formatter",
         "base_url": "http://127.0.0.1:8000/v1"
       }
-    }
-  },
-  "gpt_mini": {
-    "name": "gpt_mini",
-    "description": "All agents use OpenAI gpt-5-mini (fast, cost-effective)",
-    "agents": {
-      "symptom_normalizer":     { "model_type": "gpt", "model_name": "gpt-5-mini" },
-      "symptom_quality_grader": { "model_type": "gpt", "model_name": "gpt-5-mini" },
-      "rag_relevance_grader":   { "model_type": "gpt", "model_name": "gpt-5-mini" },
-      "diagnosis_generator":    { "model_type": "gpt", "model_name": "gpt-5-mini" },
-      "drug_evidence_grader":   { "model_type": "gpt", "model_name": "gpt-5-mini" },
-      "drug_recommender":       { "model_type": "gpt", "model_name": "gpt-5-mini" },
-      "output_formatter":       { "model_type": "gpt", "model_name": "gpt-5-mini" }
-    }
-  },
-  "gpt_quality": {
-    "name": "gpt_quality",
-    "description": "All agents use OpenAI gpt-5.1 (highest quality)",
-    "agents": {
-      "symptom_normalizer":     { "model_type": "gpt", "model_name": "gpt-5.1" },
-      "symptom_quality_grader": { "model_type": "gpt", "model_name": "gpt-5.1" },
-      "rag_relevance_grader":   { "model_type": "gpt", "model_name": "gpt-5.1" },
-      "diagnosis_generator":    { "model_type": "gpt", "model_name": "gpt-5.1" },
-      "drug_evidence_grader":   { "model_type": "gpt", "model_name": "gpt-5.1" },
-      "drug_recommender":       { "model_type": "gpt", "model_name": "gpt-5.1" },
-      "output_formatter":       { "model_type": "gpt", "model_name": "gpt-5.1" }
     }
   }
 }

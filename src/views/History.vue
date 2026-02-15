@@ -71,7 +71,7 @@
                     </span>
                   </div>
                   <div class="flex flex-wrap mt-2">
-                    <span v-for="symptom in getSymptomNames(diagnosis.symptoms)" :key="symptom" class="symptom-tag">
+                    <span v-for="symptom in getSymptomNames(diagnosis)" :key="symptom" class="symptom-tag">
                       {{ symptom }}
                     </span>
                   </div>
@@ -86,6 +86,23 @@
                 </div>
               </div>
               
+              <!-- 模型配置标签 -->
+              <div v-if="diagnosis.agent_models" class="flex flex-wrap gap-1 mt-2">
+                <span v-for="(info, agent) in getModelSummary(diagnosis.agent_models)" :key="agent"
+                      class="inline-block px-2 py-0.5 rounded text-xs"
+                      :class="info.type === 'gpt' ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'">
+                  {{ info.model }}
+                </span>
+              </div>
+              <!-- RAG 关键词标签 -->
+              <div v-if="diagnosis.rag_keywords && diagnosis.rag_keywords.length" class="flex flex-wrap gap-1 mt-1">
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500">RAG:</span>
+                <span v-for="kw in diagnosis.rag_keywords" :key="kw"
+                      class="inline-block px-2 py-0.5 rounded text-xs bg-amber-50 text-amber-700 border border-amber-200">
+                  {{ kw }}
+                </span>
+              </div>
+
               <div class="border-t border-gray-100 pt-3 mt-2">
                 <div class="flex justify-between items-center">
                   <div class="text-sm">
@@ -193,8 +210,14 @@ export default {
     };
     
     // 获取症状名称列表
-    const getSymptomNames = (symptomIds) => {
-      return symptomIds.map(id => {
+    const getSymptomNames = (diagnosis) => {
+      // 优先使用存储的 symptom_names（解决 UUID 显示问题）
+      if (Array.isArray(diagnosis.symptom_names) && diagnosis.symptom_names.length > 0) {
+        return diagnosis.symptom_names;
+      }
+      // 回退：从 COMMON_SYMPTOMS 查找
+      const ids = diagnosis.symptoms || [];
+      return ids.map(id => {
         const symptom = COMMON_SYMPTOMS.find(s => s.id === id);
         return symptom ? symptom.name : '';
       }).filter(Boolean);
@@ -230,6 +253,35 @@ export default {
       return duration ? duration.label : '未指定';
     };
     
+    // agent → 实际基座模型映射（与 AGENT_BASE_MODELS 一致）
+    const AGENT_MODEL_MAP = {
+      symptom_normalizer: 'Qwen3-0.6B',
+      symptom_quality_grader: 'Qwen3-0.6B',
+      rag_relevance_grader: 'Qwen3-0.6B',
+      diagnosis_generator: 'Qwen3-1.7B',
+      drug_evidence_grader: 'Qwen3-0.6B',
+      drug_recommender: 'Qwen3-0.6B',
+      diagnosis_reviewer: 'Qwen3-1.7B',
+      output_formatter: 'Qwen3-0.6B',
+    };
+
+    // 获取模型摘要（去重，映射可读名，过滤 user_confirmed）
+    const getModelSummary = (agentModels) => {
+      if (!agentModels || typeof agentModels !== 'object') return {};
+      const seen = new Map();
+      for (const [agent, info] of Object.entries(agentModels)) {
+        if (!info?.model || info.type === 'user_confirmed') continue;
+        // 本地模型：把 agent 名映射为实际基座模型名
+        const displayName = info.type === 'local'
+          ? (AGENT_MODEL_MAP[agent] || AGENT_MODEL_MAP[info.model] || info.model)
+          : info.model;
+        if (!seen.has(displayName)) {
+          seen.set(displayName, { type: info.type, model: displayName });
+        }
+      }
+      return Object.fromEntries(seen);
+    };
+
     // 根据严重程度获取徽章类名
     const getSeverityBadgeClass = (severity) => {
       if (severity <= 2) return 'bg-green-100 text-green-800';
@@ -332,6 +384,7 @@ export default {
       getTopCondition,
       getTopConditionProbability,
       getSeverityBadgeClass,
+      getModelSummary,
       formatTime,
       getDurationLabel
     };

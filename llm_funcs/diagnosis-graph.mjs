@@ -1,5 +1,10 @@
 // diagnosis-graph.mjs
 // LangGraph 诊断流水线 — 使用 Annotation.Root 类型化 state
+
+// 确保在其他模块读取 env 之前加载 .env
+import dotenv from "dotenv";
+dotenv.config();
+
 console.log("Starting module load...");
 
 import { ChatOpenAI, OpenAIEmbeddings } from "@langchain/openai";
@@ -18,11 +23,11 @@ import { buildRagRelevancePrompt } from "./prompts/rag_relevance_grader.mjs";
 import { buildDiagnosisPrompt } from "./prompts/diagnosis_generator.mjs";
 import { buildDrugEvidencePrompt } from "./prompts/drug_evidence_grader.mjs";
 import { buildDrugRecommendPrompt } from "./prompts/drug_recommender.mjs";
+import { buildDiagnosisReviewerPrompt } from "./prompts/diagnosis_reviewer.mjs";
 
 const DEFAULT_GPT_MODEL = process.env.OPENAI_MODEL_NAME || "gpt-5-mini";
 const DEFAULT_LOCAL_MODEL = process.env.LOCAL_MODEL_NAME || "Qwen/Qwen3-0.6B";
 const DEFAULT_LOCAL_URL = process.env.LOCAL_MODEL_URL || "http://localhost:8000/v1";
-const RAG_BACKEND = process.env.RAG_BACKEND || "pgvector";
 const RAG_EMBEDDING_MODEL = process.env.RAG_EMBEDDING_MODEL || "text-embedding-3-small";
 const RAG_CORPUS_DIAGNOSIS = process.env.RAG_CORPUS_DIAGNOSIS || "";
 const RAG_CORPUS_DRUG = process.env.RAG_CORPUS_DRUG || "";
@@ -105,7 +110,7 @@ function validateSchemaStrict(schemaName, data, label = "") {
 
 const llmGPT = new ChatOpenAI({
   model: DEFAULT_GPT_MODEL,
-  temperature: 0.2,
+  ...(DEFAULT_GPT_MODEL !== "gpt-5-mini" ? { temperature: 0.2 } : {}),
   max_tokens: 1000,
   openAIApiKey: process.env.OPENAI_API_KEY,
 });
@@ -119,6 +124,8 @@ const llmLocal = new ChatOpenAI({
 });
 
 const LLM_CACHE = new Map();
+// 记录每次 getLLM 调用时解析出的模型信息
+const _lastModelInfo = new Map();
 const AGENT_MODEL_PREFIX = {
   symptom_normalizer: "SYMPTOM_NORMALIZER",
   symptom_quality_grader: "SYMPTOM_QUALITY_GRADER",
@@ -126,6 +133,7 @@ const AGENT_MODEL_PREFIX = {
   diagnosis_generator: "DIAGNOSIS_GENERATOR",
   drug_evidence_grader: "DRUG_EVIDENCE_GRADER",
   drug_recommender: "DRUG_RECOMMENDER",
+  diagnosis_reviewer: "DIAGNOSIS_REVIEWER",
   output_formatter: "OUTPUT_FORMATTER",
 };
 
@@ -153,6 +161,9 @@ function resolveModelPath(modelPathValue) {
   return path.resolve(LOCAL_MODELS_ROOT, normalized);
 }
 
+// 某些模型（如 gpt-5-mini）不支持自定义 temperature，只允许默认值 1
+const NO_CUSTOM_TEMPERATURE_MODELS = ["gpt-5-mini"];
+
 function buildLLM({ modelType, modelName, baseURL }) {
   if (modelType === "local") {
     return new ChatOpenAI({
@@ -163,12 +174,16 @@ function buildLLM({ modelType, modelName, baseURL }) {
       configuration: { baseURL: baseURL || DEFAULT_LOCAL_URL },
     });
   }
-  return new ChatOpenAI({
-    model: modelName || DEFAULT_GPT_MODEL,
-    temperature: 0.2,
+  const resolvedName = modelName || DEFAULT_GPT_MODEL;
+  const opts = {
+    model: resolvedName,
     max_tokens: 1000,
     openAIApiKey: process.env.OPENAI_API_KEY,
-  });
+  };
+  if (!NO_CUSTOM_TEMPERATURE_MODELS.includes(resolvedName)) {
+    opts.temperature = 0.2;
+  }
+  return new ChatOpenAI(opts);
 }
 
 function getLLM(agentName, modelTypeOverride, diagnosisData) {
@@ -215,6 +230,15 @@ function getLLM(agentName, modelTypeOverride, diagnosisData) {
       ? profileConfig.base_url || envLocalUrl || DEFAULT_LOCAL_URL
       : null;
 
+  // 记录该 agent 实际使用的模型信息
+  const shortName = resolvedModelType === "local"
+    ? resolvedModelName.split(/[/\\]/).pop()
+    : resolvedModelName;
+  _lastModelInfo.set(agentName, {
+    type: resolvedModelType,
+    model: shortName,
+  });
+
   const cacheKey = `${resolvedModelType}|${resolvedModelName}|${resolvedBaseURL || ""}`;
   if (cacheKey === `gpt|${DEFAULT_GPT_MODEL}|`) return llmGPT;
   if (cacheKey === `local|${DEFAULT_LOCAL_MODEL}|${DEFAULT_LOCAL_URL}`)
@@ -231,6 +255,11 @@ function getLLM(agentName, modelTypeOverride, diagnosisData) {
     );
   }
   return LLM_CACHE.get(cacheKey);
+}
+
+/** 获取某个 agent 最近一次 getLLM 解析出的模型信息 */
+function getLastModelInfo(agentName) {
+  return _lastModelInfo.get(agentName) || { type: "unknown", model: "unknown" };
 }
 
 // -------- 工具函数 --------
@@ -271,8 +300,9 @@ function safeJSONParse(content, defaultValue = null, schemaName = null) {
     }
   }
 
-  // 策略4: 清理 markdown 等格式问题
+  // 策略4: 清理 markdown / Qwen3 thinking 残留
   const cleaned = content
+    .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
     .replace(/```json\s*/g, "")
     .replace(/```\s*/g, "")
     .replace(/^\s*[\r\n]+/, "")
@@ -284,6 +314,18 @@ function safeJSONParse(content, defaultValue = null, schemaName = null) {
     return parsed;
   } catch (e) {
     // pass
+  }
+
+  // 策略5: 清理后再提取 JSON 对象
+  const cleanedJsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (cleanedJsonMatch) {
+    try {
+      const parsed = JSON.parse(cleanedJsonMatch[0]);
+      if (schemaName && !validateSchema(schemaName, parsed)) return defaultValue;
+      return parsed;
+    } catch (e) {
+      // pass
+    }
   }
 
   console.warn("⚠️ safeJSONParse: 所有解析策略均失败，返回默认值");
@@ -468,10 +510,12 @@ function buildFallbackDiagnosis() {
 }
 
 function buildSymptomFallback(diagnosisData) {
-  const fallbackSymptoms =
-    diagnosisData.symptoms?.length > 0
-      ? diagnosisData.symptoms.join("、")
-      : "";
+  // 优先用 symptom_names（中文名），回退到 symptoms（可能是 UUID）
+  const symptomArr =
+    Array.isArray(diagnosisData.symptom_names) && diagnosisData.symptom_names.length > 0
+      ? diagnosisData.symptom_names
+      : diagnosisData.symptoms || [];
+  const fallbackSymptoms = symptomArr.length > 0 ? symptomArr.join("、") : "";
   const fallbackOther = diagnosisData.other_symptoms || "";
   const bodyPart = diagnosisData.body_part || "全身";
   const severity = ["轻微", "较轻", "中等", "较重", "严重"][
@@ -493,7 +537,7 @@ function buildSymptomFallback(diagnosisData) {
     optimized_symptoms: `患者${bodyPart}部位出现${combinedSymptoms || "不适症状"}，症状程度${severity}，持续时间${duration}。`,
     rag_keywords: [
       bodyPart,
-      ...(diagnosisData.symptoms || []),
+      ...symptomArr,
       ...(diagnosisData.other_symptoms
         ? diagnosisData.other_symptoms
             .split(/[,，、\s]+/)
@@ -561,6 +605,11 @@ const DiagnosisState = Annotation.Root({
     reducer: (_, next) => next,
     default: () => null,
   }),
+  // 每个 agent 使用的模型信息（累积合并）
+  agentModels: Annotation({
+    reducer: (prev, next) => ({ ...prev, ...next }),
+    default: () => ({}),
+  }),
 });
 
 // -------- 各节点定义 --------
@@ -569,6 +618,18 @@ const DiagnosisState = Annotation.Root({
 async function symptom_normalizer(state) {
   const { diagnosisData } = state;
   const modelType = diagnosisData?.model_type || "local";
+
+  // 如果用户已确认过预处理结果，直接使用，跳过 LLM 调用
+  if (diagnosisData._confirmed_optimized_symptoms && diagnosisData._confirmed_rag_keywords) {
+    console.log("✅ 使用用户确认的预处理结果，跳过 symptom_normalizer LLM");
+    _lastModelInfo.set("symptom_normalizer", { type: "user_confirmed", model: "用户确认" });
+    return {
+      optimizedSymptoms: diagnosisData._confirmed_optimized_symptoms,
+      ragKeywords: diagnosisData._confirmed_rag_keywords,
+      modelType,
+    };
+  }
+
   const currentLLM = getLLM("symptom_normalizer", modelType, diagnosisData);
 
   if (typeof diagnosisData !== "object" || diagnosisData === null) {
@@ -745,9 +806,12 @@ ${JSON.stringify(diagnosisData, null, 2)}
 
   // 超过最大尝试次数，使用回退
   if (criticScore.score < 3) {
+    const nameArr = Array.isArray(diagnosisData?.symptom_names) && diagnosisData.symptom_names.length > 0
+      ? diagnosisData.symptom_names
+      : (diagnosisData?.symptoms || []);
     const fallbackKeywords = [
       diagnosisData?.body_part || "",
-      ...(diagnosisData?.symptoms || []),
+      ...nameArr,
       ...(diagnosisData?.other_symptoms
         ? String(diagnosisData.other_symptoms).split(/[,\s]+/).filter(Boolean)
         : []),
@@ -759,7 +823,7 @@ ${JSON.stringify(diagnosisData, null, 2)}
     return {
       optimizedSymptoms:
         currentSymptoms ||
-        (diagnosisData?.symptoms || []).join(", ") ||
+        nameArr.join(", ") ||
         "症状摘要不可用",
       ragKeywords: fallbackKeywords,
     };
@@ -807,26 +871,24 @@ async function rag_retriever(state) {
     throw new Error("rag_keywords is empty; cannot run RAG retrieval.");
   }
 
-  // SKIP_RAG 模式：用 mock 文档跳过 Supabase 依赖
-  if (process.env.SKIP_RAG === "true") {
-    console.log("⚠️ SKIP_RAG=true, 使用 mock RAG 文档");
+  // 当 pgvector 未配置或显式跳过时，使用 mock RAG 文档
+  const skipRag =
+    process.env.SKIP_RAG === "true" || !supabaseClient || !process.env.OPENAI_API_KEY;
+
+  if (skipRag) {
+    console.log("[RAG] pgvector 未配置或 SKIP_RAG=true，使用基于症状的 mock 文档");
     return {
       ragDocs: [
         {
-          doc_id: "mock-1",
-          score: 0.5,
-          snippet: `${optimizedSymptoms} 的相关医学背景：该症状常见于多种疾病，建议结合具体情况分析。`,
+          doc_id: "mock-symptom-context",
+          score: 0.6,
+          snippet: `患者症状：${optimizedSymptoms}。该类症状在临床中较为常见，需结合患者年龄、病史及体征综合判断，建议进一步检查以明确诊断。`,
         },
       ],
     };
   }
 
   const query = ragKeywords.join(" ");
-  const ragBackend = diagnosisData.rag_backend || RAG_BACKEND;
-  if (ragBackend !== "pgvector") {
-    throw new Error("Only pgvector RAG is supported. Set RAG_BACKEND=pgvector.");
-  }
-
   const diagnosisCorpus = diagnosisData.rag_corpus || RAG_CORPUS_DIAGNOSIS;
   const filter = diagnosisCorpus ? { corpus: diagnosisCorpus } : null;
   const rag_docs = await fetchPgvectorRag(query, 5, filter);
@@ -1014,7 +1076,66 @@ async function drug_recommender(state) {
   };
 }
 
-// 8. 输出格式化
+// 8. 诊断概率校验
+async function diagnosis_reviewer(state) {
+  const { diagnosisData, diagnosisResult, optimizedSymptoms, modelType } = state;
+  const currentLLM = getLLM("diagnosis_reviewer", modelType, diagnosisData);
+
+  if (!diagnosisResult || !Array.isArray(diagnosisResult.results) || diagnosisResult.results.length === 0) {
+    console.warn("[diagnosis_reviewer] 无诊断结果可审查，跳过");
+    return {};
+  }
+
+  // 从原始输入构造摘要
+  const originalSummary = [
+    diagnosisData?.body_part ? `部位: ${diagnosisData.body_part}` : "",
+    diagnosisData?.other_symptoms ? `补充: ${diagnosisData.other_symptoms}` : "",
+    diagnosisData?.severity ? `严重程度: ${diagnosisData.severity}` : "",
+    diagnosisData?.duration ? `持续时间: ${diagnosisData.duration}` : "",
+  ].filter(Boolean).join(", ");
+
+  const prompt = buildDiagnosisReviewerPrompt(
+    originalSummary,
+    optimizedSymptoms,
+    diagnosisResult.results
+  );
+  const response = await currentLLM.invoke(prompt);
+
+  let parsed = safeJSONParse(response.content, null, null);
+
+  if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
+    // 确保概率和为 1.0
+    const total = parsed.results.reduce((s, r) => s + (r.probability || 0), 0);
+    if (total > 0 && Math.abs(total - 1.0) > 0.01) {
+      parsed.results = parsed.results.map(r => ({
+        ...r,
+        probability: r.probability / total,
+      }));
+    }
+
+    console.log("[diagnosis_reviewer] 审查意见:", parsed.review_comment);
+    console.log("[diagnosis_reviewer] 调整后概率:",
+      parsed.results.map(r => `${r.condition}: ${(r.probability * 100).toFixed(1)}%`).join(", ")
+    );
+
+    return {
+      diagnosisResult: {
+        ...diagnosisResult,
+        results: parsed.results.map((r, i) => ({
+          condition: r.condition,
+          probability: r.probability,
+          description: r.description || diagnosisResult.results[i]?.description || "",
+        })),
+        review_comment: parsed.review_comment,
+      },
+    };
+  }
+
+  console.warn("[diagnosis_reviewer] 审查输出解析失败，保留原始结果");
+  return {};
+}
+
+// 9. 输出格式化
 async function output_formatter(state) {
   const { diagnosisResult } = state;
 
@@ -1043,10 +1164,159 @@ const diagnosisGraph = new StateGraph(DiagnosisState)
   .addEdge("diagnosis_generator", "drug_evidence_grader")
   .addNode("drug_recommender", drug_recommender)
   .addEdge("drug_evidence_grader", "drug_recommender")
+  .addNode("diagnosis_reviewer", diagnosis_reviewer)
+  .addEdge("drug_recommender", "diagnosis_reviewer")
   .addNode("output_formatter", output_formatter)
-  .addEdge("drug_recommender", "output_formatter")
+  .addEdge("diagnosis_reviewer", "output_formatter")
   .addEdge("output_formatter", "__end__");
 
 const app = await diagnosisGraph.compile();
 
-export { app };
+// 节点中文名称映射（用于前端进度显示）
+const NODE_LABELS = {
+  symptom_normalizer: "症状标准化",
+  symptom_quality_grader: "症状质量评估",
+  rag_retriever: "知识库检索",
+  rag_relevance_grader: "检索相关度评估",
+  diagnosis_generator: "诊断生成",
+  drug_evidence_grader: "诊断证据评估",
+  drug_recommender: "用药推荐",
+  diagnosis_reviewer: "诊断概率校验",
+  output_formatter: "输出格式化",
+};
+
+// 节点总数（用于进度百分比）
+const TOTAL_NODES = Object.keys(NODE_LABELS).length;
+
+/**
+ * 流式执行诊断 pipeline，通过 onProgress 回调实时上报进度
+ * @param {object} input - { diagnosisData: {...} }
+ * @param {function} onProgress - (event) => void，event: { node, label, step, total, data? }
+ * @returns {object} finalOutput
+ */
+async function streamDiagnosis(input, onProgress) {
+  let stepCount = 0;
+  let finalOutput = null;
+  let capturedRagKeywords = null;
+
+  for await (const chunk of await app.stream(input, { streamMode: "updates" })) {
+    for (const [nodeName, nodeOutput] of Object.entries(chunk)) {
+      if (nodeName === "__start__" || nodeName === "__end__") continue;
+      stepCount++;
+      const label = NODE_LABELS[nodeName] || nodeName;
+
+      // 构建进度摘要数据
+      const summary = {};
+      if (nodeName === "symptom_normalizer") {
+        summary.optimized_symptoms = nodeOutput.optimizedSymptoms;
+        summary.rag_keywords = nodeOutput.ragKeywords;
+        if (Array.isArray(nodeOutput.ragKeywords)) {
+          capturedRagKeywords = nodeOutput.ragKeywords;
+        }
+      } else if (nodeName === "symptom_quality_grader") {
+        summary.score = nodeOutput.symptomScore;
+        summary.comment = nodeOutput.symptomComment;
+      } else if (nodeName === "rag_retriever") {
+        summary.doc_count = (nodeOutput.ragDocs || []).length;
+      } else if (nodeName === "rag_relevance_grader") {
+        summary.rag_score = nodeOutput.ragScore;
+        summary.rag_comment = nodeOutput.ragComment;
+      } else if (nodeName === "diagnosis_generator") {
+        summary.conditions = (nodeOutput.diagnosisResult?.results || []).map(
+          r => ({ condition: r.condition, probability: r.probability })
+        );
+      } else if (nodeName === "diagnosis_reviewer") {
+        summary.adjusted = nodeOutput.diagnosisResult?.results?.map(
+          r => ({ condition: r.condition, probability: r.probability })
+        );
+      } else if (nodeName === "drug_recommender") {
+        summary.drug_count = (nodeOutput.diagnosisResult?.recommendations || []).length;
+      } else if (nodeName === "output_formatter") {
+        finalOutput = nodeOutput.finalOutput;
+      }
+
+      // 附加该节点使用的模型信息
+      const mi = _lastModelInfo.get(nodeName);
+      if (mi) summary.model_info = mi;
+
+      if (onProgress) {
+        onProgress({
+          node: nodeName,
+          label,
+          step: stepCount,
+          total: TOTAL_NODES,
+          data: summary,
+        });
+      }
+    }
+  }
+
+  // 如果 stream 没有产出 finalOutput，回退到 invoke
+  if (!finalOutput) {
+    const result = await app.invoke(input);
+    finalOutput = result.finalOutput;
+  }
+
+  // 附加各 agent 使用的模型信息到最终输出
+  const agentModels = {};
+  for (const [agent, info] of _lastModelInfo.entries()) {
+    agentModels[agent] = info;
+  }
+  if (finalOutput && typeof finalOutput === "object") {
+    finalOutput.agent_models = agentModels;
+    if (capturedRagKeywords) {
+      finalOutput.rag_keywords = capturedRagKeywords;
+    }
+  }
+
+  return finalOutput;
+}
+
+/**
+ * 只运行 symptom_normalizer，返回 optimized_symptoms 和 rag_keywords
+ * 用于用户确认/修改步骤
+ */
+async function preprocessSymptoms(diagnosisData) {
+  const modelType = diagnosisData?.model_type || "local";
+  const currentLLM = getLLM("symptom_normalizer", modelType, diagnosisData);
+
+  const { buildSymptomNormalizerPrompt: buildPrompt } = await import(
+    "./prompts/symptom_normalizer.mjs"
+  );
+  const prompt = buildPrompt(diagnosisData);
+  const response = await currentLLM.invoke(prompt);
+
+  let parsed;
+  try {
+    parsed = JSON.parse(response.content);
+  } catch {
+    const jsonMatch = response.content.match(
+      /\{[\s\S]*?"optimized_symptoms"[\s\S]*?"rag_keywords"[\s\S]*?\}/
+    );
+    if (jsonMatch) {
+      try { parsed = JSON.parse(jsonMatch[0]); } catch { /* ignore */ }
+    }
+  }
+
+  if (!parsed) {
+    // 回退：优先用 symptom_names（中文名）
+    const nameArr = Array.isArray(diagnosisData.symptom_names) && diagnosisData.symptom_names.length > 0
+      ? diagnosisData.symptom_names
+      : (diagnosisData.symptoms || []);
+    const symptoms = nameArr.join("，");
+    const other = diagnosisData.other_symptoms || "";
+    parsed = {
+      optimized_symptoms: `${diagnosisData.body_part}部位：${symptoms}${other ? "，" + other : ""}`,
+      rag_keywords: [diagnosisData.body_part, ...nameArr.slice(0, 3)],
+    };
+  }
+
+  const mi = _lastModelInfo.get("symptom_normalizer");
+  return {
+    optimized_symptoms: parsed.optimized_symptoms || "",
+    rag_keywords: Array.isArray(parsed.rag_keywords) ? parsed.rag_keywords : [],
+    model_info: mi || null,
+  };
+}
+
+export { app, streamDiagnosis, NODE_LABELS, preprocessSymptoms };

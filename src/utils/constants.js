@@ -59,16 +59,16 @@ export const DISCLAIMER_TEXT = `
 使用本系统即表示您理解并接受这些条款。
 `;
 
-// ģ�͵�λ
+// 模型档位
 export const MODEL_PROFILES = [
   {
-    id: 'fast',
-    name: 'fast',
-    description: 'ȫ�� Agent ʹ�� Qwen3-0.6B',
+    id: 'balanced',
+    name: '标准(Qwen3系列)',
+    description: 'SFT小模型、更为轻量迅速',
   },
   {
-    id: 'balanced',
-    name: 'balanced',
-    description: '���/��ҩʹ�� Qwen3-1.7B������ 0.6B',
+    id: 'hybrid',
+    name: '混合系列',
+    description: '可选择使用 GPT 云端模型覆盖部分 Agent',
   }
 ];

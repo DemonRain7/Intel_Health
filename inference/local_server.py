@@ -13,8 +13,10 @@
 from __future__ import annotations
 
 import argparse
+import gc
 import time
 import uuid
+from collections import OrderedDict
 from pathlib import Path
 from threading import Lock
 from typing import Any
@@ -38,8 +40,9 @@ AGENT_BASE_MODELS: dict[str, str] = {
     "rag_relevance_grader": "Qwen/Qwen3-0.6B",
     "diagnosis_generator": "Qwen/Qwen3-1.7B",
     "drug_evidence_grader": "Qwen/Qwen3-0.6B",
-    "drug_recommender": "Qwen/Qwen3-0.6B",  # 无 adapter，用 base
-    "output_formatter": "Qwen/Qwen3-0.6B",  # 无 adapter，用 base
+    "drug_recommender": "Qwen/Qwen3-0.6B",   # 无 adapter，用 base
+    "diagnosis_reviewer": "Qwen/Qwen3-1.7B",  # 无 adapter，用 base
+    "output_formatter": "Qwen/Qwen3-0.6B",    # 无 adapter，用 base
 }
 
 # ── FastAPI app ───────────────────────────────────────
@@ -52,11 +55,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ── 模型管理 ──────────────────────────────────────────
+# ── 模型管理（LRU 缓存）─────────────────────────────────
 
-_loaded_models: dict[str, dict[str, Any]] = {}
+_loaded_models: OrderedDict[str, dict[str, Any]] = OrderedDict()
 _load_lock = Lock()
 _models_dir: Path = DEFAULT_MODELS_DIR
+
+_use_gpu = torch.cuda.is_available()
+
+# Pipeline 顺序执行，同一时刻只需要 1 个模型
+# 用完即驱逐，最大限度节省显存/内存
+MAX_LOADED_MODELS: int = 1
 
 
 def _resolve_model_source(model_name: str) -> str | Path:
@@ -76,14 +85,36 @@ def _resolve_model_source(model_name: str) -> str | Path:
     )
 
 
+def _evict_lru() -> None:
+    """驱逐最久未使用的模型，释放内存。"""
+    if len(_loaded_models) < MAX_LOADED_MODELS:
+        return
+    # OrderedDict: 最前面的 = 最久未使用
+    oldest_name, oldest_entry = _loaded_models.popitem(last=False)
+    print(f"[LRU] Evicting model '{oldest_name}' to free memory "
+          f"(loaded: {len(_loaded_models)}/{MAX_LOADED_MODELS})")
+    del oldest_entry["model"]
+    del oldest_entry["tokenizer"]
+    gc.collect()
+    if _use_gpu:
+        torch.cuda.empty_cache()
+
+
 def _load_model(model_name: str) -> dict[str, Any]:
-    """懒加载模型和 tokenizer（线程安全）。"""
+    """懒加载模型和 tokenizer（线程安全，LRU 驱逐）。"""
     with _load_lock:
         if model_name in _loaded_models:
+            # LRU touch: 移到末尾（最近使用）
+            _loaded_models.move_to_end(model_name)
             return _loaded_models[model_name]
 
+        # 驱逐最久未使用的模型（如果已满）
+        _evict_lru()
+
         source = _resolve_model_source(model_name)
-        print(f"Loading model '{model_name}' from {source} ...")
+        dtype = torch.float16 if _use_gpu else torch.float32
+        device = "auto" if _use_gpu else "cpu"
+        print(f"Loading model '{model_name}' from {source} (device={device}, dtype={dtype}) ...")
         t0 = time.time()
 
         tokenizer = AutoTokenizer.from_pretrained(
@@ -91,14 +122,15 @@ def _load_model(model_name: str) -> dict[str, Any]:
         )
         model = AutoModelForCausalLM.from_pretrained(
             source,
-            torch_dtype=torch.float32,  # CPU 推理用 float32
-            device_map="cpu",
+            torch_dtype=dtype,
+            device_map=device,
             trust_remote_code=True,
         )
         model.eval()
 
         elapsed = time.time() - t0
-        print(f"✅ '{model_name}' loaded in {elapsed:.1f}s")
+        actual_device = next(model.parameters()).device
+        print(f"[OK] '{model_name}' loaded in {elapsed:.1f}s -> {actual_device} ({dtype})")
 
         entry = {"model": model, "tokenizer": tokenizer, "source": str(source)}
         _loaded_models[model_name] = entry
@@ -194,9 +226,10 @@ def chat_completions(req: ChatCompletionRequest) -> ChatCompletionResponse:
             f"<|im_start|>{m.role}\n{m.content}<|im_end|>" for m in req.messages
         ) + "\n<|im_start|>assistant\n"
 
-    inputs = tokenizer(text, return_tensors="pt")
+    inputs = tokenizer(text, return_tensors="pt").to(model.device)
     input_len = inputs["input_ids"].shape[1]
 
+    t0 = time.time()
     with torch.no_grad():
         output_ids = model.generate(
             **inputs,
@@ -206,10 +239,11 @@ def chat_completions(req: ChatCompletionRequest) -> ChatCompletionResponse:
             do_sample=req.temperature > 0,
         )
 
+    gen_time = time.time() - t0
     new_tokens = output_ids[0][input_len:]
     generated_text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
-    # Qwen3 思考模式：去掉 <think>...</think> 标签
+    # Qwen3 思考模式：去掉 <think>...</think> 标签（万一仍有残留）
     if "<think>" in generated_text:
         import re
         generated_text = re.sub(
@@ -217,6 +251,8 @@ def chat_completions(req: ChatCompletionRequest) -> ChatCompletionResponse:
         ).strip()
 
     completion_tokens = len(new_tokens)
+    print(f"[{model_key}] {completion_tokens} tokens in {gen_time:.1f}s "
+          f"({completion_tokens/max(gen_time,0.01):.1f} tok/s)")
 
     return ChatCompletionResponse(
         model=model_name,
@@ -238,14 +274,16 @@ def health_check():
     return {
         "status": "ok",
         "loaded_models": list(_loaded_models.keys()),
+        "max_loaded": MAX_LOADED_MODELS,
         "models_dir": str(_models_dir),
+        "gpu": _use_gpu,
     }
 
 
 # ── 入口 ──────────────────────────────────────────────
 
 def main():
-    global _models_dir
+    global _models_dir, MAX_LOADED_MODELS
     parser = argparse.ArgumentParser(description="IntelHealth Local Inference Server")
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--host", type=str, default="0.0.0.0")
@@ -255,9 +293,23 @@ def main():
         default=str(DEFAULT_MODELS_DIR),
         help="Path to merged models directory",
     )
+    parser.add_argument(
+        "--max-models",
+        type=int,
+        default=MAX_LOADED_MODELS,
+        help="Max models kept in memory (LRU eviction). Default: 2 (GPU) / 4 (CPU)",
+    )
     args = parser.parse_args()
     _models_dir = Path(args.models_dir)
+    MAX_LOADED_MODELS = args.max_models
     print(f"Models directory: {_models_dir}")
+    print(f"LRU cache limit: {MAX_LOADED_MODELS} models")
+    if _use_gpu:
+        gpu_name = torch.cuda.get_device_name(0)
+        gpu_mem = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        print(f"GPU detected: {gpu_name} ({gpu_mem:.1f} GB) -> float16")
+    else:
+        print("No GPU detected -> CPU float32 (inference will be slower)")
     print(f"Starting server on {args.host}:{args.port}")
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
 

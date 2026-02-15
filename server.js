@@ -8,7 +8,7 @@ import crypto from "crypto";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import { createClient } from "@supabase/supabase-js";
-import { app as diagnosisApp } from "./llm_funcs/diagnosis-graph.mjs";
+import { app as diagnosisApp, streamDiagnosis, preprocessSymptoms } from "./llm_funcs/diagnosis-graph.mjs";
 
 dotenv.config();
 
@@ -65,7 +65,7 @@ const verifySupabaseToken = async (token) => {
         role: decoded.role
       };
     } catch (err) {
-      console.warn('JWT verify failed, falling back to Supabase auth:', err.message);
+      console.log('[Auth] JWT 本地验证跳过（未配置 SUPABASE_JWT_SECRET 或算法不匹配），使用 Supabase API 验证');
     }
   }
 
@@ -259,9 +259,113 @@ app.get('/api/diagnoses/:id', authenticateToken, async (req, res) => {
   }
 });
 
+// 预处理: 只运行 symptom_normalizer，返回 optimized_symptoms + rag_keywords
+app.post('/api/diagnoses/preprocess', authenticateToken, async (req, res) => {
+  try {
+    const diagnosisData = { ...req.body, user_id: req.user.id };
+    const result = await preprocessSymptoms(diagnosisData);
+    res.json(result);
+  } catch (error) {
+    console.error('Preprocess failed:', error);
+    res.status(500).json({ message: error.message || 'Preprocess failed' });
+  }
+});
+
 app.post('/api/diagnoses', authenticateToken, async (req, res) => {
   if (!requireSupabase(res)) return;
 
+  const useSSE = req.headers.accept === 'text/event-stream';
+
+  if (useSSE) {
+    // SSE 模式：实时推送 pipeline 进度
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+    });
+    const sendSSE = (event, data) => {
+      res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+    };
+
+    try {
+      const diagnosisData = req.body || {};
+      const cachePayload = {
+        user_id: req.user.id,
+        body_part: diagnosisData.body_part,
+        symptoms: diagnosisData.symptoms,
+        other_symptoms: diagnosisData.other_symptoms,
+        severity: diagnosisData.severity,
+        duration: diagnosisData.duration,
+        model_profile_id: diagnosisData.model_profile_id,
+        agent_overrides: diagnosisData.agent_overrides
+      };
+      const inputHash = hashInput(cachePayload);
+
+      let diagnosisResult = null;
+      let usedCache = false;
+
+      const { data: cacheRows } = await req.supabase
+        .from('diagnosis_cache')
+        .select('*')
+        .eq('input_hash', inputHash)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      if (cacheRows && cacheRows.length > 0 && isCacheFresh(cacheRows[0].created_at)) {
+        diagnosisResult = cacheRows[0].response_json;
+        usedCache = true;
+        sendSSE('progress', { node: 'cache_hit', label: '命中缓存', step: 1, total: 1 });
+      }
+
+      if (!diagnosisResult) {
+        diagnosisResult = await streamDiagnosis(
+          { diagnosisData: { ...diagnosisData, user_id: req.user.id } },
+          (progress) => sendSSE('progress', progress)
+        );
+
+        await req.supabase.from('diagnosis_cache').insert({
+          user_id: req.user.id,
+          input_hash: inputHash,
+          response_json: diagnosisResult,
+          model_profile_id: diagnosisData.model_profile_id || null
+        });
+      }
+
+      const newDiagnosisData = {
+        user_id: req.user.id,
+        body_part: diagnosisData.body_part,
+        symptoms: Array.isArray(diagnosisData.symptoms) ? diagnosisData.symptoms : [],
+        symptom_names: Array.isArray(diagnosisData.symptom_names) ? diagnosisData.symptom_names : [],
+        severity: String(diagnosisData.severity || 3),
+        duration: diagnosisData.duration,
+        other_symptoms: diagnosisData.other_symptoms,
+        results: diagnosisResult.results,
+        recommendations: diagnosisResult.recommendations,
+        recomm_short: diagnosisResult.recomm_short,
+        agent_models: diagnosisResult.agent_models || null,
+        model_profile_id: diagnosisData.model_profile_id || null,
+        rag_keywords: diagnosisResult.rag_keywords || null,
+      };
+
+      const { data, error } = await req.supabase
+        .from('diagnoses')
+        .insert(newDiagnosisData)
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      sendSSE('result', { ...data, cached: usedCache });
+      res.end();
+    } catch (error) {
+      console.error('Failed to create diagnosis (SSE):', error);
+      sendSSE('error', { message: error.message || 'Server error' });
+      res.end();
+    }
+    return;
+  }
+
+  // 普通 JSON 模式（保持向后兼容）
   try {
     const diagnosisData = req.body || {};
 
@@ -310,12 +414,16 @@ app.post('/api/diagnoses', authenticateToken, async (req, res) => {
       user_id: req.user.id,
       body_part: diagnosisData.body_part,
       symptoms: Array.isArray(diagnosisData.symptoms) ? diagnosisData.symptoms : [],
+      symptom_names: Array.isArray(diagnosisData.symptom_names) ? diagnosisData.symptom_names : [],
       severity: String(diagnosisData.severity || 3),
       duration: diagnosisData.duration,
       other_symptoms: diagnosisData.other_symptoms,
       results: diagnosisResult.results,
       recommendations: diagnosisResult.recommendations,
-      recomm_short: diagnosisResult.recomm_short
+      recomm_short: diagnosisResult.recomm_short,
+      agent_models: diagnosisResult.agent_models || null,
+      model_profile_id: diagnosisData.model_profile_id || null,
+      rag_keywords: diagnosisResult.rag_keywords || null,
     };
 
     const { data, error } = await req.supabase

@@ -85,6 +85,90 @@ export const diagnosesApi = {
   // 创建新诊断
   create(diagnosisData) {
     return api.post('/diagnoses', diagnosisData);
+  },
+
+  // 预处理: 只运行 symptom_normalizer，返回 optimized_symptoms + rag_keywords
+  preprocess(diagnosisData) {
+    return api.post('/diagnoses/preprocess', diagnosisData);
+  },
+
+  /**
+   * 创建诊断 (SSE 流式)
+   * @param {object} diagnosisData
+   * @param {function} onProgress - (progressEvent) => void
+   * @returns {Promise<object>} 最终诊断结果
+   */
+  async createWithSSE(diagnosisData, onProgress) {
+    // 获取 auth token
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+
+    const response = await fetch('/api/diagnoses', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify(diagnosisData),
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    return new Promise((resolve, reject) => {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let finalResult = null;
+
+      function processLines(text) {
+        buffer += text;
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // 保留不完整的最后一行
+
+        let currentEvent = '';
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6);
+            try {
+              const data = JSON.parse(dataStr);
+              if (currentEvent === 'progress' && onProgress) {
+                onProgress(data);
+              } else if (currentEvent === 'result') {
+                finalResult = data;
+              } else if (currentEvent === 'error') {
+                reject(new Error(data.message || 'Pipeline error'));
+              }
+            } catch (e) {
+              // ignore parse errors in SSE
+            }
+          }
+        }
+      }
+
+      (async () => {
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            processLines(decoder.decode(value, { stream: true }));
+          }
+          // 处理 buffer 中剩余内容
+          if (buffer.trim()) processLines(buffer + '\n');
+          if (finalResult) {
+            resolve({ data: finalResult });
+          } else {
+            reject(new Error('No result received from SSE stream'));
+          }
+        } catch (err) {
+          reject(err);
+        }
+      })();
+    });
   }
 };
 
