@@ -1,0 +1,93 @@
+[
+  {
+    "agent": "symptom_normalizer",
+    "base_model": "Qwen/Qwen3-0.6B",
+    "sft": "Yes",
+    "source_type": "merged",
+    "params_mb": 1433.6,
+    "load_time_s": 22.2,
+    "infer_time_s": 5.1,
+    "output_tokens": 83,
+    "tok_per_s": 16.4,
+    "mem_after_load_mb": 1434.1,
+    "mem_peak_infer_mb": 1469.2
+  },
+  {
+    "agent": "symptom_quality_grader",
+    "base_model": "Qwen/Qwen3-0.6B",
+    "sft": "Yes",
+    "source_type": "merged",
+    "params_mb": 1433.6,
+    "load_time_s": 17.0,
+    "infer_time_s": 1.7,
+    "output_tokens": 42,
+    "tok_per_s": 24.2,
+    "mem_after_load_mb": 1442.3,
+    "mem_peak_infer_mb": 1466.2
+  },
+  {
+    "agent": "rag_relevance_grader",
+    "base_model": "Qwen/Qwen3-0.6B",
+    "sft": "Yes",
+    "source_type": "merged",
+    "params_mb": 1433.6,
+    "load_time_s": 14.5,
+    "infer_time_s": 0.8,
+    "output_tokens": 19,
+    "tok_per_s": 24.0,
+    "mem_after_load_mb": 1442.3,
+    "mem_peak_infer_mb": 1463.7
+  },
+  {
+    "agent": "drug_evidence_grader",
+    "base_model": "Qwen/Qwen3-0.6B",
+    "sft": "Yes",
+    "source_type": "merged",
+    "params_mb": 1433.6,
+    "load_time_s": 15.1,
+    "infer_time_s": 1.5,
+    "output_tokens": 35,
+    "tok_per_s": 23.0,
+    "mem_after_load_mb": 1442.3,
+    "mem_peak_infer_mb": 1465.5
+  },
+  {
+    "agent": "diagnosis_generator",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "sft": "Yes",
+    "source_type": "merged",
+    "params_mb": 3875.2,
+    "load_time_s": 34.3,
+    "infer_time_s": 2.9,
+    "output_tokens": 67,
+    "tok_per_s": 23.3,
+    "mem_after_load_mb": 3883.4,
+    "mem_peak_infer_mb": 3909.2
+  },
+  {
+    "agent": "drug_recommender",
+    "base_model": "Qwen/Qwen3-0.6B",
+    "sft": "No (base)",
+    "source_type": "merged",
+    "params_mb": 1433.6,
+    "load_time_s": 13.6,
+    "infer_time_s": 8.4,
+    "output_tokens": 200,
+    "tok_per_s": 23.9,
+    "mem_after_load_mb": 1442.3,
+    "mem_peak_infer_mb": 1483.5
+  },
+  {
+    "agent": "diagnosis_reviewer",
+    "base_model": "Qwen/Qwen3-1.7B",
+    "sft": "No (base)",
+    "source_type": "merged",
+    "params_mb": 3875.2,
+    "load_time_s": 34.1,
+    "infer_time_s": 8.5,
+    "output_tokens": 200,
+    "tok_per_s": 23.6,
+    "mem_after_load_mb": 3883.4,
+    "mem_peak_infer_mb": 3923.7
+  }
+]
