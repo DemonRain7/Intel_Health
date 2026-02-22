@@ -31,6 +31,8 @@ const DEFAULT_LOCAL_URL = process.env.LOCAL_MODEL_URL || "http://localhost:8000/
 const RAG_EMBEDDING_MODEL = process.env.RAG_EMBEDDING_MODEL || "text-embedding-3-small";
 const RAG_CORPUS_DIAGNOSIS = process.env.RAG_CORPUS_DIAGNOSIS || "";
 const RAG_CORPUS_DRUG = process.env.RAG_CORPUS_DRUG || "";
+// 各 agent LLM 调用失败时的最大重试次数（不含首次），达到上限后使用默认值
+const MAX_RETRY_TRIES = Number(process.env.MAX_LLM_RETRY_TRIES || 3);
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
 const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -642,37 +644,22 @@ async function symptom_normalizer(state) {
   );
 
   const prompt = buildSymptomNormalizerPrompt(diagnosisData);
-  const response = await currentLLM.invoke(prompt);
-
-  let parsed;
-  try {
-    parsed = JSON.parse(response.content);
-    console.log("第一步预处理输出成功：", parsed);
-  } catch (e) {
-    console.warn("⚠️ JSON 直接解析失败，尝试从响应中提取 JSON...");
-    const jsonMatch = response.content.match(
-      /\{[\s\S]*?"optimized_symptoms"[\s\S]*?"rag_keywords"[\s\S]*?\}/
+  let parsed = null;
+  for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
+    const response = await currentLLM.invoke(prompt);
+    parsed = normalizePreprocessOutput(
+      safeJSONParse(response.content, null, "symptom_normalizer.output")
     );
-    if (jsonMatch) {
-      try {
-        parsed = JSON.parse(jsonMatch[0]);
-        console.log("✅ 从响应中提取 JSON 成功：", parsed);
-      } catch (e2) {
-        console.warn("⚠️ 提取的 JSON 仍然无法解析");
-      }
+    if (parsed) {
+      console.log(`✅ [symptom_normalizer] 第${tries + 1}次尝试成功`);
+      break;
     }
-    if (!parsed) {
-      console.warn("⚠️ 使用回退模式，基于原始输入构造结果");
-      parsed = buildSymptomFallback(diagnosisData);
-    }
+    console.warn(
+      `⚠️ [symptom_normalizer] 第${tries + 1}次解析失败，` +
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用回退")
+    );
   }
-
-  if (parsed && !validateSchema("symptom_normalizer.output", parsed)) {
-    parsed = null;
-  }
-  parsed = normalizePreprocessOutput(parsed);
   if (!parsed) {
-    console.warn("⚠️ 结构化预处理输出不符合格式，使用回退结果");
     parsed = buildSymptomFallback(diagnosisData);
   }
 
@@ -707,6 +694,7 @@ async function symptom_quality_grader(state) {
     )
   );
   if (!criticScore) {
+    console.warn("⚠️ [symptom_quality_grader] FALLBACK: 初步评分 normalize 失败，使用默认评分 3");
     criticScore = { score: 3, isValid: true, comment: "默认通过（小模型容错）" };
   }
 
@@ -782,6 +770,7 @@ ${JSON.stringify(diagnosisData, null, 2)}
       )
     );
     if (!newScoreData) {
+      console.warn(`⚠️ [symptom_quality_grader] FALLBACK: 第${tries + 1}轮迭代评分 normalize 失败，使用默认评分 3`);
       newScoreData = { score: 3, isValid: true, comment: "默认通过" };
     }
     criticScore = newScoreData;
@@ -902,15 +891,21 @@ async function rag_relevance_grader(state) {
   const currentLLM = getLLM("rag_relevance_grader", modelType, diagnosisData);
 
   const prompt = buildRagRelevancePrompt(optimizedSymptoms, ragDocs);
-  const response = await currentLLM.invoke(prompt);
-
-  let parsed = normalizeRagCheckOutput(
-    safeJSONParse(
-      response.content,
-      { ragScore: 3, ragComment: "default pass" },
-      "rag_relevance_grader.output"
-    )
-  );
+  let parsed = null;
+  for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
+    const response = await currentLLM.invoke(prompt);
+    parsed = normalizeRagCheckOutput(
+      safeJSONParse(response.content, null, "rag_relevance_grader.output")
+    );
+    if (parsed) {
+      console.log(`✅ [rag_relevance_grader] 第${tries + 1}次尝试成功，ragScore=${parsed.ragScore}`);
+      break;
+    }
+    console.warn(
+      `⚠️ [rag_relevance_grader] 第${tries + 1}次解析失败，` +
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用默认评分 ragScore=3")
+    );
+  }
   if (!parsed) {
     parsed = { ragScore: 3, ragComment: "default pass" };
   }
@@ -932,11 +927,21 @@ async function diagnosis_generator(state) {
   }
 
   const prompt = buildDiagnosisPrompt(optimizedSymptoms, ragDocs);
-  const response = await currentLLM.invoke(prompt);
-
-  let parsedResult = normalizeDiagnosisOutput(
-    safeJSONParse(response.content, null, "diagnosis_generator.output")
-  );
+  let parsedResult = null;
+  for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
+    const response = await currentLLM.invoke(prompt);
+    parsedResult = normalizeDiagnosisOutput(
+      safeJSONParse(response.content, null, "diagnosis_generator.output")
+    );
+    if (parsedResult) {
+      console.log(`✅ [diagnosis_generator] 第${tries + 1}次尝试成功`);
+      break;
+    }
+    console.warn(
+      `⚠️ [diagnosis_generator] 第${tries + 1}次解析失败，` +
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用兜底诊断")
+    );
+  }
   if (!parsedResult) {
     parsedResult = buildFallbackDiagnosis();
   }
@@ -950,15 +955,21 @@ async function drug_evidence_grader(state) {
   const currentLLM = getLLM("drug_evidence_grader", modelType, diagnosisData);
 
   const prompt = buildDrugEvidencePrompt(diagnosisResult, ragDocs);
-  const response = await currentLLM.invoke(prompt);
-
-  let scoreMeta = normalizeDiagnosisScoreOutput(
-    safeJSONParse(
-      response.content,
-      { diagnosisScore: 3, diagnosisComment: "default pass" },
-      "drug_evidence_grader.output"
-    )
-  );
+  let scoreMeta = null;
+  for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
+    const response = await currentLLM.invoke(prompt);
+    scoreMeta = normalizeDiagnosisScoreOutput(
+      safeJSONParse(response.content, null, "drug_evidence_grader.output")
+    );
+    if (scoreMeta) {
+      console.log(`✅ [drug_evidence_grader] 第${tries + 1}次尝试成功，score=${scoreMeta.diagnosisScore}`);
+      break;
+    }
+    console.warn(
+      `⚠️ [drug_evidence_grader] 第${tries + 1}次解析失败，` +
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用默认评分 3")
+    );
+  }
   if (!scoreMeta) {
     scoreMeta = { diagnosisScore: 3, diagnosisComment: "default pass" };
   }
@@ -1008,13 +1019,22 @@ async function drug_recommender(state) {
     const condition = result.condition;
 
     const drugPrompt = buildDrugRecommendPrompt(condition, drugRagContext);
-    const response = await currentLLM.invoke(drugPrompt);
-
-    let parsed = normalizeDrugOutput(
-      safeJSONParse(response.content, null, "drug_recommender.output")
-    );
+    let parsed = null;
+    for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
+      const response = await currentLLM.invoke(drugPrompt);
+      parsed = normalizeDrugOutput(
+        safeJSONParse(response.content, null, "drug_recommender.output")
+      );
+      if (parsed) {
+        console.log(`✅ [drug_recommender] "${condition}" 第${tries + 1}次尝试成功`);
+        break;
+      }
+      console.warn(
+        `⚠️ [drug_recommender] "${condition}" 第${tries + 1}次解析失败，` +
+        (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用默认建议")
+      );
+    }
     if (!parsed) {
-      console.warn(`"${condition}" 的药物建议解析失败，使用默认建议`);
       parsed = {
         drugs: [
           {
@@ -1099,9 +1119,20 @@ async function diagnosis_reviewer(state) {
     optimizedSymptoms,
     diagnosisResult.results
   );
-  const response = await currentLLM.invoke(prompt);
-
-  let parsed = safeJSONParse(response.content, null, null);
+  let parsed = null;
+  for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
+    const response = await currentLLM.invoke(prompt);
+    const candidate = safeJSONParse(response.content, null, null);
+    if (candidate && Array.isArray(candidate.results) && candidate.results.length > 0) {
+      parsed = candidate;
+      console.log(`✅ [diagnosis_reviewer] 第${tries + 1}次尝试成功`);
+      break;
+    }
+    console.warn(
+      `⚠️ [diagnosis_reviewer] 第${tries + 1}次解析失败，` +
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，保留原始诊断结果")
+    );
+  }
 
   if (parsed && Array.isArray(parsed.results) && parsed.results.length > 0) {
     // 确保概率和为 1.0
@@ -1131,7 +1162,7 @@ async function diagnosis_reviewer(state) {
     };
   }
 
-  console.warn("[diagnosis_reviewer] 审查输出解析失败，保留原始结果");
+  console.warn("[diagnosis_reviewer] 所有重试均失败，保留原始诊断结果");
   return {};
 }
 
@@ -1139,10 +1170,13 @@ async function diagnosis_reviewer(state) {
 async function output_formatter(state) {
   const { diagnosisResult } = state;
 
-  const normalized =
-    normalizeDiagnosisOutput(diagnosisResult, {
-      allowExtraRecommendations: true,
-    }) || buildFallbackDiagnosis();
+  const normalizeAttempt = normalizeDiagnosisOutput(diagnosisResult, {
+    allowExtraRecommendations: true,
+  });
+  if (!normalizeAttempt) {
+    console.warn("⚠️ [output_formatter] FALLBACK: 最终输出 normalize 失败，使用兜底诊断结果");
+  }
+  const normalized = normalizeAttempt || buildFallbackDiagnosis();
 
   return { finalOutput: normalized };
 }
