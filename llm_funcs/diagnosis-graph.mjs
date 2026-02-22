@@ -892,22 +892,34 @@ async function rag_relevance_grader(state) {
 
   const prompt = buildRagRelevancePrompt(optimizedSymptoms, ragDocs);
   let parsed = null;
+  let lastExtracted = null; // 即使 normalize 失败，也保留 LLM 打出的原始分数
   for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
     const response = await currentLLM.invoke(prompt);
-    parsed = normalizeRagCheckOutput(
-      safeJSONParse(response.content, null, "rag_relevance_grader.output")
-    );
+    const raw = safeJSONParse(response.content, null, null);
+    if (raw && typeof raw.ragScore === "number") {
+      lastExtracted = {
+        ragScore: Math.min(5, Math.max(0, Math.round(raw.ragScore))),
+        ragComment: typeof raw.ragComment === "string" ? raw.ragComment.trim() : "",
+      };
+    }
+    parsed = normalizeRagCheckOutput(raw);
     if (parsed) {
       console.log(`✅ [rag_relevance_grader] 第${tries + 1}次尝试成功，ragScore=${parsed.ragScore}`);
       break;
     }
     console.warn(
       `⚠️ [rag_relevance_grader] 第${tries + 1}次解析失败，` +
-      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用默认评分 ragScore=3")
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数")
     );
   }
   if (!parsed) {
-    parsed = { ragScore: 3, ragComment: "default pass" };
+    if (lastExtracted !== null) {
+      parsed = lastExtracted;
+      console.warn(`⚠️ [rag_relevance_grader] normalize 失败，保留提取分数 ragScore=${parsed.ragScore}`);
+    } else {
+      parsed = { ragScore: 3, ragComment: "解析失败，使用默认中等评分" };
+      console.warn("⚠️ [rag_relevance_grader] 所有重试均失败且无法提取分数，使用默认 ragScore=3");
+    }
   }
 
   return {
@@ -926,7 +938,7 @@ async function diagnosis_generator(state) {
     return { diagnosisResult: buildFallbackDiagnosis() };
   }
 
-  const prompt = buildDiagnosisPrompt(optimizedSymptoms, ragDocs);
+  const prompt = buildDiagnosisPrompt(optimizedSymptoms, ragDocs, ragScore ?? null, ragComment ?? "");
   let parsedResult = null;
   for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
     const response = await currentLLM.invoke(prompt);
@@ -956,22 +968,34 @@ async function drug_evidence_grader(state) {
 
   const prompt = buildDrugEvidencePrompt(diagnosisResult, ragDocs);
   let scoreMeta = null;
+  let lastExtracted = null; // 即使 normalize 失败，也保留 LLM 打出的原始分数
   for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
     const response = await currentLLM.invoke(prompt);
-    scoreMeta = normalizeDiagnosisScoreOutput(
-      safeJSONParse(response.content, null, "drug_evidence_grader.output")
-    );
+    const raw = safeJSONParse(response.content, null, null);
+    if (raw && typeof raw.diagnosisScore === "number") {
+      lastExtracted = {
+        diagnosisScore: Math.min(5, Math.max(0, Math.round(raw.diagnosisScore))),
+        diagnosisComment: typeof raw.diagnosisComment === "string" ? raw.diagnosisComment.trim() : "",
+      };
+    }
+    scoreMeta = normalizeDiagnosisScoreOutput(raw);
     if (scoreMeta) {
       console.log(`✅ [drug_evidence_grader] 第${tries + 1}次尝试成功，score=${scoreMeta.diagnosisScore}`);
       break;
     }
     console.warn(
       `⚠️ [drug_evidence_grader] 第${tries + 1}次解析失败，` +
-      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数，使用默认评分 3")
+      (tries + 1 < MAX_RETRY_TRIES ? "重试..." : "已达最大重试次数")
     );
   }
   if (!scoreMeta) {
-    scoreMeta = { diagnosisScore: 3, diagnosisComment: "default pass" };
+    if (lastExtracted !== null) {
+      scoreMeta = lastExtracted;
+      console.warn(`⚠️ [drug_evidence_grader] normalize 失败，保留提取分数 diagnosisScore=${scoreMeta.diagnosisScore}`);
+    } else {
+      scoreMeta = { diagnosisScore: 3, diagnosisComment: "解析失败，使用默认中等评分" };
+      console.warn("⚠️ [drug_evidence_grader] 所有重试均失败且无法提取分数，使用默认 diagnosisScore=3");
+    }
   }
 
   return {
@@ -982,7 +1006,7 @@ async function drug_evidence_grader(state) {
 
 // 7. 药物推荐
 async function drug_recommender(state) {
-  const { diagnosisResult, optimizedSymptoms, ragDocs, modelType, diagnosisData } = state;
+  const { diagnosisResult, optimizedSymptoms, ragDocs, modelType, diagnosisData, diagnosisScore, diagnosisComment } = state;
   const currentLLM = getLLM("drug_recommender", modelType, diagnosisData);
 
   const drugsOutput = [];
@@ -1018,7 +1042,7 @@ async function drug_recommender(state) {
       result.drugRagContext || drugContextDocs || "";
     const condition = result.condition;
 
-    const drugPrompt = buildDrugRecommendPrompt(condition, drugRagContext);
+    const drugPrompt = buildDrugRecommendPrompt(condition, drugRagContext, diagnosisScore ?? null, diagnosisComment ?? "");
     let parsed = null;
     for (let tries = 0; tries < MAX_RETRY_TRIES; tries++) {
       const response = await currentLLM.invoke(drugPrompt);
